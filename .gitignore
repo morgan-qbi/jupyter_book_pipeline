@@ -1,0 +1,7 @@
+# .gitignore
+__pycache__/
+*.pyc
+.DS_Store
+_build_staging/
+*.yml
+.env
