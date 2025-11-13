@@ -50,7 +50,13 @@ npm install -g mystmd
 ## Usage
 ```bash
 cd qbi_pipeline
+
+# With specific bucket
+python build_pipeline.py ../path/to/bucket
+
+# Or use default
 python build_pipeline.py
+
 cd ../_build_staging
 myst start
 ```
@@ -61,10 +67,6 @@ See [CHANGELOG.md](./CHANGELOG.md)
 - Auto-generates myst.yml from folder structure
 - Converts Obsidian image syntax
 - Creates staging directory (doesn't modify source files)
-
-## Known issues
-- Spaces in image filenames break rendering
-- .stl/.ino files treated as images (should be download links)
 
 ## Future enhancements
 - OCR for lab notebook images

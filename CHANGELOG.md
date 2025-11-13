@@ -5,9 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2025-11-13
 ### Added
-- (placeholder for next feature)
+- Command-line argument support for specifying source bucket path
+- Error logging for missing files during link conversion
+- Support for URL-encoded filenames (%20) in Obsidian links
+
+### Fixed
+- File lookup now sanitizes both source filenames and lookup queries to handle spaces and URL encoding
+- Eliminated false "duplicate file" warnings caused by indexing files twice
+- Non-image files (.stl, .ino, .ipynb) now correctly converted to download links instead of broken image embeds
+- Images with spaces in filenames now render correctly
 
 ## [0.2.0] – 2025-11-11
 ### Added
