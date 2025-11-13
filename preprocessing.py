@@ -5,8 +5,8 @@ import urllib.parse
 import os
 
 def sanitize_filename(filename):
-    """Replace spaces with underscores in filename"""
-    return filename.replace(' ', '_')
+    """Replace spaces and %20 with underscores"""
+    return filename.replace('%20', '_').replace(' ', '_')
 
 def build_file_index(source_path):
     """
@@ -26,14 +26,17 @@ def build_file_index(source_path):
             filename = item.name
             sanitized_filename = sanitize_filename(filename)
             
-            # Index both original and sanitized names
-            for name in [filename, sanitized_filename]:
-                if name in file_index:
-                    if not isinstance(file_index[name], list):
-                        file_index[name] = [file_index[name]]
-                    file_index[name].append(str(sanitized_path))
-                else:
-                    file_index[name] = str(sanitized_path)
+            # Only index the sanitized version
+            if sanitized_filename in file_index:
+                if not isinstance(file_index[sanitized_filename], list):
+                    print(f"🔍 Found duplicate: {sanitized_filename}")
+                    print(f"   First:  {file_index[sanitized_filename]}")
+                    file_index[sanitized_filename] = [file_index[sanitized_filename]]
+                
+                print(f"   Another: {str(sanitized_path)}")
+                file_index[sanitized_filename].append(str(sanitized_path))
+            else:
+                file_index[sanitized_filename] = str(sanitized_path)# Index both original and sanitized names
     
     return file_index
 
@@ -65,12 +68,14 @@ def convert_obsidian_links_with_lookup(text, current_file, file_index):
     
     def replacement(match):
         filename = match.group(1)
+        sanitized_lookup = sanitize_filename(filename)  # ← ADD THIS LINE
         
-        # Look up file in index
-        if filename not in file_index:
+        # Use sanitized name for lookup
+        if sanitized_lookup not in file_index:
+            print(f"⚠️  File not found: {filename} (referenced in {current_file})")
             return f'![[{filename}]]'
         
-        file_path = file_index[filename]
+        file_path = file_index[sanitized_lookup]
         
         if isinstance(file_path, list):
             file_path = file_path[0]
