@@ -47,7 +47,7 @@ if __name__ == "__main__":
         source_path = sys.argv[1]
     else:
         # Default if no argument
-        source_path = "../research_biology_md_local"
+        source_path = "../research_biology_la"
         
     if len(sys.argv) > 2:
         staging_dir = sys.argv[2]
