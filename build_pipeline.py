@@ -48,10 +48,14 @@ if __name__ == "__main__":
     else:
         # Default if no argument
         source_path = "../research_biology_md_local"
+        
+    if len(sys.argv) > 2:
+        staging_dir = sys.argv[2]
+    else:
+        staging_dir = "../_build_staging"
     
     # Extract bucket name from path
     bucket_name = Path(source_path).name.replace('_local', '').replace('_gcs', '')
     
-    staging_dir = "../_build_staging"
     
     build_jupyter_book(source_path, bucket_name, staging_dir)
