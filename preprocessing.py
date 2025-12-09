@@ -44,6 +44,8 @@ def build_file_index(source_path):
     file_index = {}
     
     for item in source_path.rglob('*'):
+        if any(part.startswith(('.', '_')) for part in item.relative_to(source_path).parts):
+            continue
         if item.is_file():
             relative_path = item.relative_to(source_path)
             
@@ -202,6 +204,8 @@ def create_staging_directory(source_path, staging_path):
     
     # Walk through source directory
     for item in source_path.rglob('*'):
+        if any(part.startswith(('.', '_')) for part in item.relative_to(source_path).parts):
+            continue
         if item.is_file():
             relative_path = item.relative_to(source_path)
             
