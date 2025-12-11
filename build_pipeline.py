@@ -1,4 +1,5 @@
 import sys
+import argparse
 from pathlib import Path
 from preprocessing import create_staging_directory
 from config_generator import generate_myst_config
@@ -40,22 +41,16 @@ def build_jupyter_book(source_path, bucket_name, staging_dir="_build_staging"):
     return staging_path
 
     
-
 if __name__ == "__main__":
-    # Check if source path provided as argument
-    if len(sys.argv) > 1:
-        source_path = sys.argv[1]
-    else:
-        # Default if no argument
-        source_path = "../research_biology_la"
-        
-    if len(sys.argv) > 2:
-        staging_dir = sys.argv[2]
-    else:
-        staging_dir = "../_build_staging"
+    parser = argparse.ArgumentParser(description='Preprocess Obsidian vault for MyST')
+    parser.add_argument('source', nargs='?', default='../research_biology_la',
+                        help='Source vault path')
+    parser.add_argument('output', nargs='?', default='../_build_staging',
+                        help='Output staging directory')
     
+    args = parser.parse_args()
     # Extract bucket name from path
-    bucket_name = Path(source_path).name.replace('_local', '').replace('_gcs', '')
+    bucket_name = Path(args.source).name.replace('_local', '').replace('_gcs', '')
     
     
-    build_jupyter_book(source_path, bucket_name, staging_dir)
+    build_jupyter_book(args.source, bucket_name, args.output)
