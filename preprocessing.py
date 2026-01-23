@@ -1,177 +1,265 @@
 import re
 import shutil
 from pathlib import Path
-import urllib.parse
 import os
 import sys
+
 sys.stdout.reconfigure(encoding='utf-8')
 
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+
+IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp'}
+
+# =============================================================================
+# PATH UTILITIES
+# =============================================================================
 
 def sanitize_filename(filename):
-    """Replace spaces and %20 with underscores"""
+    """Replace spaces and URL-encoded spaces with underscores"""
     return filename.replace('%20', '_').replace(' ', '_')
 
 
-def fix_text_issues(content):
-    """Fix text formatting issues that break MyST"""
-    # Replace fancy dashes with regular hyphen, begone en- and em-dashes!
-    content = content.replace('–', '-')  # en-dash (U+2013)
-    content = content.replace('—', '-')  # em-dash (U+2014)
-    content = content.replace('−', '-')  # minus sign (U+2212)
-    
-    # Escape @ symbols so they aren't parsed as citations
-    # Scientists write @50 mT, @ALE, etc.
-    content = content.replace('@', '\\@')
-    
+def sanitize_path(path_str):
+    """Sanitize all parts of a path"""
+    parts = path_str.replace('\\', '/').split('/')
+    return '/'.join(sanitize_filename(part) for part in parts)
+
+
+def get_relative_path(from_file, to_file):
+    """Calculate relative path from one file to another"""
+    from_dir = Path(from_file).parent
+    try:
+        rel_path = os.path.relpath(to_file, from_dir)
+        return rel_path.replace('\\', '/')
+    except ValueError:
+        return str(to_file).replace('\\', '/')
+
+
+# =============================================================================
+# PHASE 0: IMAGE LINEBREAKS
+# Ensure images are on their own line for block rendering
+# =============================================================================
+
+def ensure_image_linebreaks(content):
+    """Ensure images render as blocks, not inline"""
+    # If there's text immediately before ![[, split it to a new line
+    # Match: any non-whitespace character followed by ![[
+    content = re.sub(r'(\S)(\!\[\[)', r'\1\n\n\2', content)
     return content
 
 
-def fix_notion_export_paths(content):
-    """Fix Notion's URL-encoded export folder names to point to attachments/"""
-    # Notion exports create folders like "Lab%20Notebook%20216be76e722280c380fad6c0fc508250/"
-    # The actual images end up in attachments/
-    pattern = r'Lab%20Notebook%20[a-f0-9]+/'
-    content = re.sub(pattern, 'attachments/', content, flags=re.IGNORECASE)
+# =============================================================================
+# PHASE 1: PATH NORMALIZATION
+# =============================================================================
+
+def normalize_notion_folders(content):
+    """Fix Notion's weird export folder names"""
+    content = re.sub(
+        r'Lab%20Notebook%20[a-f0-9]+/',
+        'attachments/',
+        content,
+        flags=re.IGNORECASE
+    )
+    content = content.replace('__attachments/', 'attachments/')
     return content
 
+
+def normalize_markdown_link_urls(content):
+    """Sanitize URLs in standard markdown links"""
+    def fix_url(match):
+        prefix = match.group(1)
+        text = match.group(2)
+        url = match.group(3)
+        sanitized_url = sanitize_path(url)
+        return f'{prefix}{text}]({sanitized_url})'
+    
+    return re.sub(r'(!?\[)([^\]]*)\]\(([^)]+)\)', fix_url, content)
+
+
+def normalize_all_paths(content):
+    """Phase 1: Normalize all paths before link processing"""
+    content = normalize_notion_folders(content)
+    content = normalize_markdown_link_urls(content)
+    return content
+
+
+# =============================================================================
+# PHASE 2: LINK CONVERSION
+# =============================================================================
 
 def build_file_index(source_path):
     """
-    Build an index of all files in the project
-    Returns: dict mapping filename -> relative path from source_path
+    Build indices for file lookup.
+    
+    Returns:
+        file_index: dict mapping sanitized filename → relative path (for vault-wide lookup)
+        path_set: set of all sanitized full paths (for O(1) existence checks)
     """
     source_path = Path(source_path)
     file_index = {}
+    path_set = set()
     
     for item in source_path.rglob('*'):
         if any(part.startswith(('.', '_')) for part in item.relative_to(source_path).parts):
             continue
+        
         if item.is_file():
             relative_path = item.relative_to(source_path)
-            
-            # Sanitize the path
             sanitized_path = Path(*[sanitize_filename(part) for part in relative_path.parts])
+            sanitized_path_str = str(sanitized_path).replace('\\', '/')
+            sanitized_filename = sanitize_filename(item.name)
             
-            filename = item.name
-            sanitized_filename = sanitize_filename(filename)
+            # Add to path set for O(1) "does this path exist" checks
+            path_set.add(sanitized_path_str)
             
-            # Only index the sanitized version
+            # Add to filename index for vault-wide lookup
             if sanitized_filename in file_index:
                 if not isinstance(file_index[sanitized_filename], list):
                     print(f"Found duplicate: {sanitized_filename}")
                     print(f"   First:  {file_index[sanitized_filename]}")
                     file_index[sanitized_filename] = [file_index[sanitized_filename]]
-                
-                print(f"   Another: {str(sanitized_path)}")
-                file_index[sanitized_filename].append(str(sanitized_path))
+                print(f"   Another: {sanitized_path_str}")
+                file_index[sanitized_filename].append(sanitized_path_str)
             else:
-                file_index[sanitized_filename] = str(sanitized_path)
+                file_index[sanitized_filename] = sanitized_path_str
     
-    return file_index
+    return file_index, path_set
 
 
-def get_relative_path(from_file, to_file):
+def convert_obsidian_links(content, current_file, file_index, path_set):
     """
-    Calculate relative path from one file to another
-    """
-    from_file = Path(from_file)
-    to_file = Path(to_file)
+    Convert Obsidian ![[...]] links to standard markdown.
     
-    # Get the directory of the source file
-    from_dir = from_file.parent
-    
-    # Calculate relative path
-    try:
-        rel_path = os.path.relpath(to_file, from_dir)
-        return rel_path.replace('\\', '/')  # Use forward slashes for web
-    except ValueError:
-        # If on different drives on Windows, return absolute path
-        return str(to_file).replace('\\', '/')
-
-
-def convert_obsidian_links_with_lookup(text, current_file, file_index):
-    """
-    Convert Obsidian links using file index for lookup.
-    
-    Handles two cases:
-    1. ![[filename.png]] - vault-wide lookup by filename
-    2. ![[path/to/filename.png]] - explicit path, use directly
+    Handles:
+    - ![[filename.png]] → vault-wide lookup by filename
+    - ![[path/to/file.png]] → explicit path (tries relative, then absolute from root)
     """
     pattern = r'!\[\[(.*?)\]\]'
-    
-    image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp'}
     
     def replacement(match):
         raw_reference = match.group(1)
         
-        # Check if this is a path or just a filename
+        # Explicit path provided
         if '/' in raw_reference or '\\' in raw_reference:
-            # Obsidian gave us an explicit path - sanitize and use it directly
-            path_parts = raw_reference.replace('\\', '/').split('/')
-            sanitized_path = '/'.join(sanitize_filename(part) for part in path_parts)
-            file_ext = Path(raw_reference).suffix.lower()
+            sanitized_path = sanitize_path(raw_reference)
             filename = Path(raw_reference).name
+            ext = Path(raw_reference).suffix.lower()
             
-            if file_ext in image_extensions:
-                return f'![]({sanitized_path})'
+            # First, check if this is an absolute path from vault root
+            if sanitized_path in path_set:
+                # Rewrite as relative path from current file
+                final_path = get_relative_path(current_file, sanitized_path)
             else:
-                return f'[Download {filename}]({sanitized_path})'
+                # Try as relative path (already relative, just use it)
+                # Build what the full path would be and check
+                current_dir = str(Path(current_file).parent).replace('\\', '/')
+                if current_dir == '.':
+                    candidate = sanitized_path
+                else:
+                    candidate = f"{current_dir}/{sanitized_path}"
+                
+                if candidate in path_set:
+                    final_path = sanitized_path  # It's already relative and correct
+                else:
+                    # Path doesn't exist either way - leave sanitized and hope for the best
+                    print(f"Warning: Path not found: {sanitized_path} (referenced in {current_file})")
+                    final_path = sanitized_path
+            
+            if ext in IMAGE_EXTENSIONS:
+                return f'![]({final_path})'
+            else:
+                return f'[Download {filename}]({final_path})'
         
-        # No path separator - do the vault-wide lookup by filename only
-        filename = raw_reference
-        sanitized_lookup = sanitize_filename(filename)
+        # Filename only - vault-wide lookup
+        sanitized_lookup = sanitize_filename(raw_reference)
         
         if sanitized_lookup not in file_index:
-            print(f"Warning: File not found in index: {filename} (referenced in {current_file})")
-            # Leave it unconverted so it's obvious what's broken
-            return f'![[{filename}]]'
+            print(f"Warning: File not found in index: {raw_reference} (referenced in {current_file})")
+            return f'![[{raw_reference}]]'
         
         file_path = file_index[sanitized_lookup]
-        
         if isinstance(file_path, list):
+            print(f"Warning: Multiple files named '{raw_reference}', using {file_path[0]}")
             file_path = file_path[0]
-            print(f"Warning: Multiple files named '{filename}', using {file_path}")
         
-        # Calculate relative path from current file to target file
         rel_path = get_relative_path(current_file, file_path)
-        file_ext = Path(filename).suffix.lower()
+        ext = Path(raw_reference).suffix.lower()
         
-        if file_ext in image_extensions:
+        if ext in IMAGE_EXTENSIONS:
             return f'![]({rel_path})'
         else:
-            return f'[Download {filename}]({rel_path})'
+            return f'[Download {raw_reference}]({rel_path})'
     
-    return re.sub(pattern, replacement, text)
+    return re.sub(pattern, replacement, content)
 
 
-def process_markdown_file(file_path, output_path, file_index, source_root):
+def rewrite_absolute_paths(content, current_file, path_set):
     """
-    Read markdown file, convert Obsidian syntax, write to output
+    Check standard markdown image links for absolute paths and rewrite as relative.
     """
+    pattern = r'!\[([^\]]*)\]\(([^)]+)\)'
+    
+    def replacement(match):
+        alt_text = match.group(1)
+        url = match.group(2)
+        
+        # Skip external URLs
+        if url.startswith(('http://', 'https://', 'data:')):
+            return match.group(0)
+        
+        sanitized_url = sanitize_path(url)
+        
+        # Check if this is an absolute path from vault root
+        if sanitized_url in path_set:
+            # Rewrite as relative from current file
+            sanitized_url = get_relative_path(current_file, sanitized_url)
+        
+        return f'![{alt_text}]({sanitized_url})'
+    
+    return re.sub(pattern, replacement, content)
+
+
+# =============================================================================
+# PHASE 3: TEXT CLEANUP
+# =============================================================================
+
+def fix_text_issues(content):
+    """Fix text formatting issues that break MyST"""
+    content = content.replace('–', '-')  # en-dash
+    content = content.replace('—', '-')  # em-dash
+    content = content.replace('−', '-')  # minus sign
+    content = content.replace('@', '\\@')
+    return content
+
+
+# =============================================================================
+# MAIN PROCESSING PIPELINE
+# =============================================================================
+
+def process_markdown_content(content, current_file, file_index, path_set):
+    """Process markdown through the full pipeline"""
+    content = ensure_image_linebreaks(content)  # Phase 0 - ensure block images
+    content = normalize_all_paths(content)       # Phase 1
+    content = convert_obsidian_links(content, current_file, file_index, path_set)  # Phase 2
+    content = rewrite_absolute_paths(content, current_file, path_set)  # Phase 2b
+    content = fix_text_issues(content)           # Phase 3
+    return content
+
+
+def process_markdown_file(file_path, output_path, file_index, path_set, source_root):
+    """Read markdown file, process it, write to output"""
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
         
-        # Fix Notion export paths FIRST (before link conversion)
-        content = fix_notion_export_paths(content)
-        
-        # Get relative path from source root for lookup
         relative_file_path = file_path.relative_to(source_root)
-        
-        # Sanitize the relative path for lookup
         sanitized_relative_path = Path(*[sanitize_filename(part) for part in relative_file_path.parts])
+        sanitized_relative_str = str(sanitized_relative_path).replace('\\', '/')
         
-        # Convert Obsidian links with file lookup
-        content = convert_obsidian_links_with_lookup(
-            content,
-            sanitized_relative_path,
-            file_index
-        )
+        content = process_markdown_content(content, sanitized_relative_str, file_index, path_set)
         
-        # Fix text issues LAST (so we don't mess with filenames)
-        content = fix_text_issues(content)
-        
-        # Write to output
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(content)
@@ -183,42 +271,31 @@ def process_markdown_file(file_path, output_path, file_index, source_root):
 
 
 def create_staging_directory(source_path, staging_path):
-    """
-    Create staging directory with processed files
-    """
+    """Create staging directory with processed files"""
     source_path = Path(source_path)
     staging_path = Path(staging_path)
     
-    # Remove existing staging
     if staging_path.exists():
         shutil.rmtree(staging_path)
-    
     staging_path.mkdir(parents=True)
     
     print(f"Creating staging directory: {staging_path}")
-    
-    # Build file index first
     print("Building file index...")
-    file_index = build_file_index(source_path)
-    print(f"Indexed {len(file_index)} unique filenames")
+    file_index, path_set = build_file_index(source_path)
+    print(f"Indexed {len(file_index)} unique filenames, {len(path_set)} total paths")
     
-    # Walk through source directory
     for item in source_path.rglob('*'):
         if any(part.startswith(('.', '_')) for part in item.relative_to(source_path).parts):
             continue
+        
         if item.is_file():
             relative_path = item.relative_to(source_path)
-            
-            # Sanitize the output path
             sanitized_relative = Path(*[sanitize_filename(part) for part in relative_path.parts])
             output_path = staging_path / sanitized_relative
             
-            # Process markdown files with file index
             if item.suffix == '.md':
                 print(f"Processing: {relative_path}")
-                process_markdown_file(item, output_path, file_index, source_path)
-            
-            # Copy other files with sanitized names
+                process_markdown_file(item, output_path, file_index, path_set, source_path)
             else:
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(item, output_path)
@@ -227,18 +304,28 @@ def create_staging_directory(source_path, staging_path):
     return staging_path
 
 
+# =============================================================================
+# TESTING
+# =============================================================================
+
 if __name__ == "__main__":
-    # Quick test
-    test_content = """
-Here's an image from Notion: ![](Lab%20Notebook%20216be76e722280c380fad6c0fc508250/test.png)
+    test_content = """Here's a Notion image: ![](Lab%20Notebook%20216be76e722280c380fad6c0fc508250/test.png)
+Another Notion style: ![image.png](__attachments/image%203.png)
 Measured @50 mT with en-dash range 10–20.
-An Obsidian image: ![[my image.png]]
+An inline image that should get a linebreak: here's data ![[my image.png]]
 An Obsidian path: ![[subfolder/another image.png]]
 """
-    print("=== Testing fix_notion_export_paths ===")
-    result = fix_notion_export_paths(test_content)
+    print("=== Original ===")
+    print(test_content)
+    
+    print("\n=== After ensure_image_linebreaks ===")
+    result = ensure_image_linebreaks(test_content)
     print(result)
     
-    print("\n=== Testing fix_text_issues ===")
+    print("\n=== After normalize_all_paths ===")
+    result = normalize_all_paths(result)
+    print(result)
+    
+    print("\n=== After fix_text_issues ===")
     result = fix_text_issues(result)
     print(result)
