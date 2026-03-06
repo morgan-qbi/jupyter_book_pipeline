@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-03-06
+### Added
+- Image optimization pipeline (Phase 4): resizes images wider than 1200px and compresses for web delivery
+- EXIF orientation handling to preserve correct image rotation after optimization
+- Frontmatter injection (Phase 0a): auto-generates titles from filenames for MyST rendering
+- Image linebreak normalization (Phase 0b): ensures images render as blocks, not inline
+- Configurable exclusion prefixes for filtering directories (e.g., confidential `5_*` folders)
+- Error handling for image optimization to prevent individual bad files from halting the pipeline
+- Multi-vault support: unified `myst.yml` generation across multiple research vaults via `generate_multi_vault_config()`
+- Display name overrides (`DISPLAY_NAMES` dict) to preserve correct casing for vault names (e.g., "LA" no longer renders as "La")
+- Expanded `EXCLUDED_DIRS` to filter `venv`, `node_modules`, `site-packages`, `.dist-info`, and other non-publishable directories from staging
+
+### Fixed
+- Exclusion filter in `create_staging_directory` now uses `EXCLUDED_PREFIXES` constant instead of hardcoded tuple
+- `EXCLUDED_PREFIXES` changed from set to tuple for compatibility with `str.startswith()`
+- Duplicate TOC entries caused by nested `for` loop in `scan_folder_recursive`
+- `myst-eln.service` infinite rebuild loop triggered by empty/truncated `.ipynb` files
+- Removed `--headless` flag from service config (MyST v1.8.0 silently skips the app server with this flag)
+
 ## [0.3.0] - 2025-11-13
 ### Added
 - Command-line argument support for specifying source bucket path

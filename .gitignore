@@ -5,3 +5,4 @@ __pycache__/
 _build_staging/
 *.yml
 .env
+build_config.yml
