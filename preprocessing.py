@@ -3,6 +3,8 @@ import shutil
 from pathlib import Path
 import os
 import sys
+from PIL import Image, ImageOps
+import json
 
 sys.stdout.reconfigure(encoding='utf-8')
 
@@ -11,6 +13,16 @@ sys.stdout.reconfigure(encoding='utf-8')
 # =============================================================================
 
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp'}
+
+EXCLUDED_DIRS = {
+    'venv', 'node_modules', '__pycache__', 'site-packages', '.git', '.obsidian',
+    '.ipynb_checkpoints', 'dist-info', '__pypackages__', '.trash', '_build',
+    'Folder Template Structure', 'Discourse Canvas'
+}
+
+EXCLUDED_PREFIXES = ('.', '_', '5_')  # Exclude hidden files and folders and the confidential folder 5
+
+MAX_IMAGE_WIDTH = 1200  # pixels
 
 # =============================================================================
 # PATH UTILITIES
@@ -37,16 +49,54 @@ def get_relative_path(from_file, to_file):
         return str(to_file).replace('\\', '/')
 
 
+def prettify_folder_name(folder_name):
+    """Convert folder_name to Title Case with spaces"""
+    name = folder_name.lstrip('0123456789_')
+    name = name.replace('_', ' ')
+    return name.title()
+
+
 # =============================================================================
-# PHASE 0: IMAGE LINEBREAKS
+# PHASE 0a: FRONTMATTER INJECTION
+# Ensure every file has a title in frontmatter so MyST uses it
+# =============================================================================
+
+def inject_frontmatter(content, title):
+    """Add MyST frontmatter with title if not already present"""
+    # Quote the title if it contains YAML-special characters
+    if any(c in title for c in ':{}[]&*?|>!%@`'):
+        quoted_title = f"'{title}'"
+    else:
+        quoted_title = title
+    
+    # Check if frontmatter already exists
+    if content.startswith('---'):
+        end = content.find('---', 3)
+        if end != -1:
+            existing_fm = content[3:end]
+            if 'title:' not in existing_fm:
+                # Add title to existing frontmatter
+                content = content[:3] + f'title: {quoted_title}\n' + content[3:]
+        return content
+    
+    # No frontmatter - add it
+    frontmatter = f'---\ntitle: {quoted_title}\n---\n\n'
+    return frontmatter + content
+
+
+# =============================================================================
+# PHASE 0b: IMAGE LINEBREAKS
 # Ensure images are on their own line for block rendering
 # =============================================================================
 
 def ensure_image_linebreaks(content):
     """Ensure images render as blocks, not inline"""
     # If there's text immediately before ![[, split it to a new line
-    # Match: any non-whitespace character followed by ![[
     content = re.sub(r'(\S)(\!\[\[)', r'\1\n\n\2', content)
+    # Ensure blank line before ![[ even if already on own line (e.g. inside lists)
+    content = re.sub(r'(?<!\n)\n([ \t]*\!\[\[)', r'\n\n\1', content)
+    # Same for standard markdown images
+    content = re.sub(r'(?<!\n)\n([ \t]*!\[)', r'\n\n\1', content)
     return content
 
 
@@ -94,7 +144,7 @@ def build_file_index(source_path):
     Build indices for file lookup.
     
     Returns:
-        file_index: dict mapping sanitized filename → relative path (for vault-wide lookup)
+        file_index: dict mapping sanitized filename -> relative path (for vault-wide lookup)
         path_set: set of all sanitized full paths (for O(1) existence checks)
     """
     source_path = Path(source_path)
@@ -102,7 +152,8 @@ def build_file_index(source_path):
     path_set = set()
     
     for item in source_path.rglob('*'):
-        if any(part.startswith(('.', '_')) for part in item.relative_to(source_path).parts):
+        if any(part.startswith(EXCLUDED_PREFIXES) or part in EXCLUDED_DIRS or part.endswith('.dist-info')
+               for part in item.relative_to(source_path).parts):
             continue
         
         if item.is_file():
@@ -133,8 +184,8 @@ def convert_obsidian_links(content, current_file, file_index, path_set):
     Convert Obsidian ![[...]] links to standard markdown.
     
     Handles:
-    - ![[filename.png]] → vault-wide lookup by filename
-    - ![[path/to/file.png]] → explicit path (tries relative, then absolute from root)
+    - ![[filename.png]] -> vault-wide lookup by filename
+    - ![[path/to/file.png]] -> explicit path (tries relative, then absolute from root)
     """
     pattern = r'!\[\[(.*?)\]\]'
     
@@ -227,12 +278,37 @@ def rewrite_absolute_paths(content, current_file, path_set):
 
 def fix_text_issues(content):
     """Fix text formatting issues that break MyST"""
-    content = content.replace('–', '-')  # en-dash
-    content = content.replace('—', '-')  # em-dash
-    content = content.replace('−', '-')  # minus sign
+    content = content.replace('\u2013', '-')  # en-dash
+    content = content.replace('\u2014', '-')  # em-dash
+    content = content.replace('\u2212', '-')  # minus sign
     content = content.replace('@', '\\@')
     return content
 
+# =============================================================================
+# PHASE 4: IMAGE OPTIMIZATION
+# =============================================================================
+
+def optimize_image(image_path):
+    """Resize and compress images for web delivery"""
+    ext = image_path.suffix.lower()
+    if ext not in {'.jpg', '.jpeg', '.png', '.webp'}:
+        return  # skip SVG, GIF, BMP
+    
+    img = Image.open(image_path)
+    img = ImageOps.exif_transpose(img)  # Apply EXIF rotation to actual pixels
+    
+    if img.width > MAX_IMAGE_WIDTH:
+        ratio = MAX_IMAGE_WIDTH / img.width
+        new_height = int(img.height * ratio)
+        img = img.resize((MAX_IMAGE_WIDTH, new_height), Image.LANCZOS)
+    
+    # Save with compression
+    if ext in {'.jpg', '.jpeg'}:
+        img.save(image_path, quality=80, optimize=True)
+    elif ext == '.png':
+        img.save(image_path, optimize=True)
+    elif ext == '.webp':
+        img.save(image_path, quality=80)
 
 # =============================================================================
 # MAIN PROCESSING PIPELINE
@@ -240,11 +316,15 @@ def fix_text_issues(content):
 
 def process_markdown_content(content, current_file, file_index, path_set):
     """Process markdown through the full pipeline"""
-    content = ensure_image_linebreaks(content)  # Phase 0 - ensure block images
-    content = normalize_all_paths(content)       # Phase 1
+    # Phase 0a - inject frontmatter title from filename
+    title = prettify_folder_name(Path(current_file).stem)
+    content = inject_frontmatter(content, title)
+    
+    content = ensure_image_linebreaks(content)    # Phase 0b - ensure block images
+    content = normalize_all_paths(content)         # Phase 1
     content = convert_obsidian_links(content, current_file, file_index, path_set)  # Phase 2
     content = rewrite_absolute_paths(content, current_file, path_set)  # Phase 2b
-    content = fix_text_issues(content)           # Phase 3
+    content = fix_text_issues(content)             # Phase 3
     return content
 
 
@@ -285,7 +365,8 @@ def create_staging_directory(source_path, staging_path):
     print(f"Indexed {len(file_index)} unique filenames, {len(path_set)} total paths")
     
     for item in source_path.rglob('*'):
-        if any(part.startswith(('.', '_')) for part in item.relative_to(source_path).parts):
+        if any(part.startswith(EXCLUDED_PREFIXES) or part in EXCLUDED_DIRS or part.endswith('.dist-info')
+               for part in item.relative_to(source_path).parts):
             continue
         
         if item.is_file():
@@ -298,7 +379,18 @@ def create_staging_directory(source_path, staging_path):
                 process_markdown_file(item, output_path, file_index, path_set, source_path)
             else:
                 output_path.parent.mkdir(parents=True, exist_ok=True)
+                if item.suffix == '.ipynb':
+                    try:
+                        json.load(open(item))
+                    except (json.JSONDecodeError, ValueError):
+                        print(f"⚠️  Skipping invalid notebook: {relative_path}")
+                        continue
                 shutil.copy2(item, output_path)
+                if output_path.suffix.lower() in IMAGE_EXTENSIONS:
+                    try:
+                        optimize_image(output_path)
+                    except Exception as e:
+                        print(f"Warning: Could not optimize {output_path}: {e}")
     
     print(f"Staging directory created at {staging_path}")
     return staging_path
@@ -311,15 +403,22 @@ def create_staging_directory(source_path, staging_path):
 if __name__ == "__main__":
     test_content = """Here's a Notion image: ![](Lab%20Notebook%20216be76e722280c380fad6c0fc508250/test.png)
 Another Notion style: ![image.png](__attachments/image%203.png)
-Measured @50 mT with en-dash range 10–20.
+Measured @50 mT with en-dash range 10\u201320.
 An inline image that should get a linebreak: here's data ![[my image.png]]
 An Obsidian path: ![[subfolder/another image.png]]
+A list with an image:
+* Some bullet point
+  ![[chart.png]]
 """
     print("=== Original ===")
     print(test_content)
     
+    print("\n=== After inject_frontmatter ===")
+    result = inject_frontmatter(test_content, "Test Document")
+    print(result)
+    
     print("\n=== After ensure_image_linebreaks ===")
-    result = ensure_image_linebreaks(test_content)
+    result = ensure_image_linebreaks(result)
     print(result)
     
     print("\n=== After normalize_all_paths ===")
