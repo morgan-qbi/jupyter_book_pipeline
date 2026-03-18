@@ -9,6 +9,22 @@ Single vault:
 
 Multi vault:
     generate_multi_vault_config(staged_vaults, staging_path)
+
+Structure assumptions:
+    vault/
+    ├── project_a/
+    │   ├── 1_eln_project_a/
+    │   │   ├── notebook1.md
+    │   │   └── subfolder/
+    │   │       └── nested_notebook.md
+    │   ├── 2_curated_datasets_project_a/
+    │   ├── 3_code_project_a/
+    │   └── 4_auxiliary_files_project_a/
+    └── project_b/
+        └── ...
+
+Chapter folders are identified by a leading digit (1_, 2_, 3_, 4_).
+Chapter 5 is excluded by default (confidential).
 """
 
 import os
@@ -16,6 +32,10 @@ from pathlib import Path
 import yaml
 import uuid
 
+
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
 
 EXCLUDED_PREFIXES = ('.', '_', '5_')
 
@@ -43,24 +63,40 @@ DISPLAY_NAMES = {
     'bacterioscope': 'Bacterioscope',
 }
 
+# How deep to recurse into chapter subdirectories
+MAX_SCAN_DEPTH = 4
+
+
+# =============================================================================
+# HELPERS
+# =============================================================================
 
 def prettify_folder_name(folder_name):
-    """Convert folder_name to Title Case with spaces"""
+    """Convert folder_name to Title Case with spaces.
+
+    Strips leading digits and underscores, replaces remaining underscores
+    and hyphens with spaces, then title-cases the result. If the folder name
+    is only digits/underscores (e.g. '2025'), returns it unchanged.
+    """
     name = folder_name.lstrip('0123456789_')
     if not name:
-        # Folder name is only digits/underscores (e.g., "2025"), keep as-is
         return folder_name
     name = name.replace('_', ' ').replace('-', ' ')
     return name.title()
 
 
 def get_display_name(folder_name):
-    """Get display name for a folder, checking overrides first."""
+    """Get display name for a folder, checking DISPLAY_NAMES overrides first."""
     return DISPLAY_NAMES.get(folder_name, prettify_folder_name(folder_name))
 
 
 def should_skip_dir(dir_name):
-    """Check if a directory should be skipped"""
+    """Check if a directory should be skipped.
+
+    Skips directories that:
+    - Are in the EXCLUDED_DIRS set (venv, node_modules, etc.)
+    - Start with any prefix in EXCLUDED_PREFIXES (., _, 5_)
+    """
     if dir_name in EXCLUDED_DIRS:
         return True
     if any(dir_name.startswith(p) for p in EXCLUDED_PREFIXES):
@@ -69,7 +105,11 @@ def should_skip_dir(dir_name):
 
 
 def find_homepage(search_path):
-    """Look for an intro/readme file to use as homepage"""
+    """Look for an intro/readme file to use as homepage.
+
+    Checks for README.md, index.md, and intro.md in the given directory.
+    Returns the Path if found, None otherwise.
+    """
     candidates = ['README.md', 'index.md', 'intro.md']
     for name in candidates:
         intro_path = search_path / name
@@ -78,8 +118,73 @@ def find_homepage(search_path):
     return None
 
 
-def scan_chapter_contents(chapter_path, base_path):
-    """Scan a chapter folder for publishable files"""
+def find_or_create_homepage(bucket_path, bucket_name):
+    """Find an existing homepage or create a placeholder.
+
+    Search order:
+    1. README.md / index.md / intro.md in bucket root
+    2. README.md in any project folder
+    3. Generate a placeholder index.md
+
+    Returns:
+        tuple: (file_path_relative_to_bucket, was_generated)
+    """
+    bucket_path = Path(bucket_path)
+
+    # 1. Check bucket root for standard intro files
+    homepage = find_homepage(bucket_path)
+    if homepage:
+        return (str(homepage.relative_to(bucket_path)).replace('\\', '/'), False)
+
+    # 2. Check each project folder for a README
+    project_folders = sorted([
+        d for d in bucket_path.iterdir()
+        if d.is_dir() and not should_skip_dir(d.name)
+    ])
+
+    for project in project_folders:
+        project_readme = project / 'README.md'
+        if project_readme.exists():
+            return (str(project_readme.relative_to(bucket_path)).replace('\\', '/'), False)
+
+    # 3. Generate a placeholder
+    pretty_name = get_display_name(bucket_name)
+    placeholder_content = f"""# {pretty_name}
+
+Research data and documentation from {pretty_name}.
+"""
+
+    placeholder_path = bucket_path / 'index.md'
+    with open(placeholder_path, 'w', encoding='utf-8') as f:
+        f.write(placeholder_content)
+
+    print(f"Generated placeholder homepage: {placeholder_path}")
+    return ('index.md', True)
+
+
+# =============================================================================
+# TOC SCANNING
+# =============================================================================
+
+def scan_chapter_contents(chapter_path, base_path, max_depth=MAX_SCAN_DEPTH, current_depth=0):
+    """Scan a chapter folder for publishable files.
+
+    Recursively walks the chapter directory up to max_depth levels,
+    collecting .md and .ipynb files into a TOC-compatible list.
+    README/index/intro files at each level become 'Overview' entries.
+
+    Args:
+        chapter_path: Path to the chapter directory
+        base_path: Root path for computing relative file paths
+        max_depth: Maximum recursion depth (default: MAX_SCAN_DEPTH)
+        current_depth: Current recursion depth (internal use)
+
+    Returns:
+        list: TOC entries (dicts with 'file' and optionally 'title'/'children')
+    """
+    if current_depth >= max_depth:
+        return []
+
     children = []
 
     # Check for chapter-level README first
@@ -100,46 +205,43 @@ def scan_chapter_contents(chapter_path, base_path):
         file_path = str(file.relative_to(base_path)).replace('\\', '/')
         children.append({'file': file_path})
 
-    # Scan subdirectories (one level deep) for additional files
+    # Scan subdirectories recursively
     subdirs = sorted([
         d for d in chapter_path.iterdir()
         if d.is_dir() and not should_skip_dir(d.name)
     ])
 
     for subdir in subdirs:
-        sub_files = sorted([
-            f for f in subdir.iterdir()
-            if f.is_file() and f.suffix in ['.md', '.ipynb']
-        ])
-        if sub_files:
+        sub_children = scan_chapter_contents(subdir, base_path, max_depth, current_depth + 1)
+
+        if sub_children:
             sub_entry = {
                 'title': prettify_folder_name(subdir.name),
-                'children': []
+                'children': sub_children
             }
-            # Check for subdir README
-            sub_readme = find_homepage(subdir)
-            if sub_readme:
-                sub_path = str(sub_readme.relative_to(base_path)).replace('\\', '/')
-                sub_entry['children'].append({'file': sub_path, 'title': 'Overview'})
-
-            for file in sub_files:
-                if file.name in ['README.md', 'index.md', 'intro.md']:
-                    continue
-                file_path = str(file.relative_to(base_path)).replace('\\', '/')
-                sub_entry['children'].append({'file': file_path})
-
-            if sub_entry['children']:
-                children.append(sub_entry)
+            children.append(sub_entry)
 
     return children
 
 
 def scan_project_structure(project_path, base_path):
-    """Generate TOC entries for a single project"""
+    """Generate TOC entries for a single project.
+
+    Scans a project directory for numbered chapter folders (1_, 2_, 3_, 4_)
+    and generates a hierarchical TOC. Checks for a project-level README
+    to use as an overview page.
+
+    Args:
+        project_path: Path to the project directory
+        base_path: Root path for computing relative file paths
+
+    Returns:
+        dict: TOC entry with 'title' and 'children' keys
+    """
     project_title = get_display_name(project_path.name)
 
     project_entry = {
-        'title': project_title,
+        'title': f"Project: {project_title}",
         'children': []
     }
 
@@ -172,7 +274,18 @@ def scan_project_structure(project_path, base_path):
 
 
 def scan_vault_structure(vault_path, base_path):
-    """Generate TOC entries for a vault (contains multiple projects)"""
+    """Generate TOC entries for a vault containing multiple projects.
+
+    Scans a vault directory for project folders, skipping excluded directories.
+    Checks for a vault-level README to use as an overview page.
+
+    Args:
+        vault_path: Path to the vault directory
+        base_path: Root path for computing relative file paths
+
+    Returns:
+        dict: TOC entry with 'title' and 'children' keys
+    """
     vault_path = Path(vault_path)
     vault_title = get_display_name(vault_path.name)
 
@@ -201,14 +314,26 @@ def scan_vault_structure(vault_path, base_path):
     return vault_entry
 
 
+# =============================================================================
+# CONFIG GENERATION
+# =============================================================================
+
 def build_site_config(toc, site_title="QBI Research"):
-    """Build the full myst.yml config dict"""
+    """Build the full myst.yml config dict.
+
+    Args:
+        toc: List of TOC entries
+        site_title: Title for the site (default: 'QBI Research')
+
+    Returns:
+        dict: Complete myst.yml configuration
+    """
     return {
         'version': 1,
         'project': {
             'id': str(uuid.uuid4()),
             'title': site_title,
-            'description': 'Research documentation from the Quantum Biology Institute',
+            'description': f'Research documentation from {site_title}',
             'open_access': True,
             'license': 'CC-BY-4.0',
             'toc': toc
@@ -226,17 +351,22 @@ def build_site_config(toc, site_title="QBI Research"):
 
 
 def generate_multi_vault_config(staged_vaults, staging_path):
-    """
-    Generate a unified myst.yml for multiple vaults.
+    """Generate a unified myst.yml for multiple vaults.
+
+    Creates a single myst.yml at the staging root that references all vaults.
+    Generates an index.md landing page if one doesn't exist.
 
     Args:
         staged_vaults: list of dicts with 'name' and 'path' keys
         staging_path: root staging directory where myst.yml will be written
+
+    Returns:
+        dict: The generated configuration
     """
     staging_path = Path(staging_path)
     toc = []
 
-    # Check for a root-level homepage
+    # Check for a root-level homepage, or create one
     homepage = find_homepage(staging_path)
     if homepage:
         file_path = str(homepage.relative_to(staging_path)).replace('\\', '/')
@@ -270,17 +400,26 @@ def generate_multi_vault_config(staged_vaults, staging_path):
 
 
 def generate_myst_config(bucket_path, bucket_name, output_path="myst.yml"):
-    """
-    Generate myst.yml for a single vault. Kept for backwards compatibility.
+    """Generate myst.yml for a single vault.
+
+    Kept for backwards compatibility with single-vault workflows.
+    Scans the vault for projects, finds or creates a homepage,
+    and writes a complete myst.yml.
+
+    Args:
+        bucket_path: Path to the vault directory
+        bucket_name: Name of the vault (used for title/display)
+        output_path: Filename for the config (default: 'myst.yml')
+
+    Returns:
+        dict: The generated configuration
     """
     bucket_path = Path(bucket_path)
     toc = []
 
-    # Check for vault-level homepage
-    readme = find_homepage(bucket_path)
-    if readme:
-        file_path = str(readme.relative_to(bucket_path)).replace('\\', '/')
-        toc.append({'file': file_path, 'title': 'Home'})
+    # Find or create homepage (generates placeholder if needed)
+    homepage_file, was_generated = find_or_create_homepage(bucket_path, bucket_name)
+    toc.append({'file': homepage_file, 'title': 'Home'})
 
     # Scan projects
     project_folders = sorted([
