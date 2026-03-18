@@ -6,3 +6,4 @@ _build_staging/
 *.yml
 .env
 build_config.yml
+venv/
