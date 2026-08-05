@@ -115,21 +115,18 @@ def test_chapters_are_titled_from_the_chapter_name_table(staging):
     assert "Chapter 2: Curated Datasets" in titles
 
 
-def test_confidential_chapter_is_included_in_the_toc(staging):
-    """KNOWN-WRONG (S-16): scan_project_structure selects chapter folders with
-    `d.name[0:1].isdigit()` and never calls should_skip_dir, so a `5_*` folder
-    is emitted as a chapter.
-
-    In the normal build this is masked because preprocessing already stripped
-    `5_*` from staging -- but it means the TOC layer has no defense of its own,
-    and running `python config_generator.py <raw vault>` lists confidential
-    files directly.
+def test_confidential_chapter_is_excluded_from_the_toc(staging):
+    """S-16 regression guard: the TOC layer must enforce the confidential rule
+    itself, not rely on preprocessing having already stripped `5_*` folders
+    from staging. Running config generation against a raw vault used to list
+    confidential files directly.
     """
     entry = scan_vault_structure(staging / "research-biology-la", staging)
     project = entry["children"][1]
     titles = [c["title"] for c in project["children"] if "title" in c]
 
-    assert "Chapter 5: Confidential" in titles  # <- leaks
+    assert "Chapter 5: Confidential" not in titles
+    assert not any("secret" in str(c) for c in project["children"])
 
 
 # =============================================================================

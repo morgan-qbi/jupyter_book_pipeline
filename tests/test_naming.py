@@ -8,6 +8,7 @@ get inverted when that finding is fixed.
 import pytest
 
 import config_generator
+import naming
 import preprocessing
 
 
@@ -44,31 +45,29 @@ def test_sanitize_path_normalizes_separators_and_spaces(raw, expected):
     ("1_eln", "Eln"),
     ("my_folder", "My Folder"),
     ("2_curated_datasets", "Curated Datasets"),
+    ("2025", "2025"),                                # was "" in preprocessing
+    ("research-biology-la", "Research Biology La"),  # was "Research-Biology-La"
 ])
-def test_prettify_agrees_across_both_implementations(raw, expected):
-    """Cases where the two copies happen to agree."""
+def test_prettify_folder_name(raw, expected):
+    assert naming.prettify_folder_name(raw) == expected
+
+
+def test_every_module_shares_one_prettify_implementation():
+    """Phase 1: there used to be four copies with three behaviors. The two that
+    diverged were preprocessing's -- it left hyphens alone and returned an
+    empty string for all-digit names like a `2025` folder.
+    """
+    assert preprocessing.prettify_folder_name is naming.prettify_folder_name
+    assert config_generator.prettify_folder_name is naming.prettify_folder_name
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ("2025", "2025"),
+    ("research-biology-la", "Research Biology La"),
+])
+def test_previously_divergent_cases_now_agree(raw, expected):
     assert preprocessing.prettify_folder_name(raw) == expected
     assert config_generator.prettify_folder_name(raw) == expected
-
-
-def test_prettify_diverges_on_pure_digit_names():
-    """KNOWN-WRONG (preprocessing): a year folder is stripped to an empty string.
-
-    config_generator.py grew a guard for this; preprocessing.py never did.
-    Phase 1 unifies on the config_generator behavior.
-    """
-    assert preprocessing.prettify_folder_name("2025") == ""       # <- defect
-    assert config_generator.prettify_folder_name("2025") == "2025"  # <- correct
-
-
-def test_prettify_diverges_on_hyphenated_names():
-    """KNOWN-WRONG (preprocessing): hyphens are not converted to spaces.
-
-    Every real vault name is hyphenated (research-biology-la), so this is the
-    difference that actually shows up in output.
-    """
-    assert preprocessing.prettify_folder_name("research-biology-la") == "Research-Biology-La"
-    assert config_generator.prettify_folder_name("research-biology-la") == "Research Biology La"
 
 
 # =============================================================================

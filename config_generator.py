@@ -11,19 +11,17 @@ Multi vault:
     generate_multi_vault_config(staged_vaults, staging_path)
 """
 
-import os
 from pathlib import Path
 import yaml
 import uuid
 
-
-EXCLUDED_PREFIXES = ('.', '_', '5_')
-
-EXCLUDED_DIRS = {
-    'venv', 'node_modules', '__pycache__', 'site-packages', '.git', '.obsidian',
-    '.ipynb_checkpoints', 'dist-info', '__pypackages__', '.trash',
-    'attachments', 'Discourse Canvas'
-}
+from policy import is_navigable_name
+# Re-exported so existing callers and tests keep working.
+from naming import (  # noqa: F401
+    DISPLAY_NAMES,
+    get_display_name,
+    prettify_folder_name,
+)
 
 CHAPTER_NAMES = {
     '1': 'ELN',
@@ -32,42 +30,15 @@ CHAPTER_NAMES = {
     '4': 'Auxiliary Files'
 }
 
-# Display name overrides for vault/project folder names.
-# Keys are the folder names on disk, values are exact display names.
-# Anything not in this dict falls through to prettify_folder_name().
-DISPLAY_NAMES = {
-    'ecoli_flavoprotein_expression': 'E. coli Flavoprotein Expression',
-    'research-biology-la': 'Research: Biology LA',
-    'research-biology-md': 'Research: Biology MD',
-    'research-bio-redox': 'Research: Bio Redox',
-    'bacterioscope': 'Bacterioscope',
-    'research-physics-la': 'Research: Physics LA',
-    'research-physics-theory': 'Research: Physics Theory'
-}
-
-
-def prettify_folder_name(folder_name):
-    """Convert folder_name to Title Case with spaces"""
-    name = folder_name.lstrip('0123456789_')
-    if not name:
-        # Folder name is only digits/underscores (e.g., "2025"), keep as-is
-        return folder_name
-    name = name.replace('_', ' ').replace('-', ' ')
-    return name.title()
-
-
-def get_display_name(folder_name):
-    """Get display name for a folder, checking overrides first."""
-    return DISPLAY_NAMES.get(folder_name, prettify_folder_name(folder_name))
-
 
 def should_skip_dir(dir_name):
-    """Check if a directory should be skipped"""
-    if dir_name in EXCLUDED_DIRS:
-        return True
-    if any(dir_name.startswith(p) for p in EXCLUDED_PREFIXES):
-        return True
-    return False
+    """
+    Check if a directory should be left out of site navigation.
+
+    Stricter than the staging rules: `attachments/` is staged so that embeds
+    resolve, but must not appear as a browsable chapter. See policy.py.
+    """
+    return not is_navigable_name(dir_name)
 
 
 def find_homepage(search_path):
@@ -151,10 +122,14 @@ def scan_project_structure(project_path, base_path):
         file_path = str(readme.relative_to(base_path)).replace('\\', '/')
         project_entry['children'].append({'file': file_path, 'title': 'Overview'})
 
-    # Get chapter folders (1_, 2_, 3_, 4_)
+    # Get chapter folders (1_, 2_, 3_, 4_). The should_skip_dir check matters:
+    # without it a confidential `5_*` folder is emitted as "Chapter 5" with its
+    # files listed. That used to be masked only because preprocessing had
+    # already stripped those folders from staging, which left this layer with
+    # no defense of its own (S-16).
     chapter_folders = sorted([
         d for d in project_path.iterdir()
-        if d.is_dir() and d.name[0:1].isdigit()
+        if d.is_dir() and d.name[0:1].isdigit() and not should_skip_dir(d.name)
     ])
 
     for chapter in chapter_folders:

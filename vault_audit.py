@@ -10,19 +10,25 @@ Usage:
 
 import argparse
 import re
+import sys
 from pathlib import Path
 from datetime import datetime
+
+from policy import (
+    EXCLUDED_DIRS,
+    IMAGE_EXTENSIONS,
+    is_excluded_name,
+    iter_vault_dirs,
+    iter_vault_files,
+)
 
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
-
-IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp', '.tiff', '.tif'}
-
-EXCLUDED_DIRS = {
-    '.obsidian', '.git', '.trash', 'node_modules', '__pycache__',
-    'venv', '.ipynb_checkpoints', '_build_staging'
-}
+# Exclusion rules live in policy.py. This module previously kept its own copy
+# that omitted the confidential-folder convention entirely, so audit reports
+# listed the filenames and link targets inside `5_*` folders and wrote them to
+# disk as markdown (S-1).
 
 PASTED_IMAGE_PATTERN = re.compile(r'^Pasted[\s_]image[\s_]\d+', re.IGNORECASE)
 SCREENSHOT_PATTERN = re.compile(r'^Screenshot[\s_]\d+', re.IGNORECASE)
@@ -42,29 +48,25 @@ NOTION_FOLDER_PATTERN = re.compile(r'\s[0-9a-f]{32}$', re.IGNORECASE)
 # =============================================================================
 
 def should_skip_dir(dir_path):
-    """Check if directory should be excluded from scanning"""
-    return any(part in EXCLUDED_DIRS or part.startswith('.')
-               for part in dir_path.parts)
+    """Check if a path should be excluded from scanning"""
+    return any(is_excluded_name(part) for part in Path(dir_path).parts)
 
 
 def get_all_files(vault_path):
-    """Get all files in vault, excluding hidden/system directories"""
-    vault_path = Path(vault_path)
-    files = []
-    for item in vault_path.rglob('*'):
-        if item.is_file() and not should_skip_dir(item.relative_to(vault_path)):
-            files.append(item)
-    return files
+    """
+    Get all auditable files in the vault.
+
+    Uses the shared traversal, so confidential folders and any subtree carrying
+    a .qbi-exclude marker are skipped. Audit reports are written to disk and
+    may be shared, so they must never name files the vault owner has marked
+    as not-for-publication.
+    """
+    return [absolute for absolute, _ in iter_vault_files(vault_path)]
 
 
 def get_all_dirs(vault_path):
-    """Get all directories in vault, excluding hidden/system directories"""
-    vault_path = Path(vault_path)
-    dirs = []
-    for item in vault_path.rglob('*'):
-        if item.is_dir() and not should_skip_dir(item.relative_to(vault_path)):
-            dirs.append(item)
-    return dirs
+    """Get all auditable directories in the vault"""
+    return [absolute for absolute, _ in iter_vault_dirs(vault_path)]
 
 
 # =============================================================================
@@ -325,6 +327,12 @@ def main():
 
     args = parser.parse_args()
     vault_path = Path(args.path)
+
+    # Reports contain status glyphs that a cp1252 Windows console cannot
+    # encode. Production runs Linux/UTF-8, but the tool should not crash for
+    # anyone running it locally.
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
 
     if args.all:
         output_dir = Path(args.output_dir) if args.output_dir else Path('audit_reports')

@@ -1,60 +1,31 @@
 import re
 import shutil
 from pathlib import Path
-import os
 import sys
 from PIL import Image, ImageOps
 import json
 import yaml
+
+from policy import WEB_IMAGE_EXTENSIONS, iter_vault_files
+# Re-exported so existing callers and tests keep working; these now have a
+# single implementation each rather than one copy per module.
+from naming import (  # noqa: F401
+    get_relative_path,
+    prettify_folder_name,
+    sanitize_filename,
+    sanitize_path,
+    sanitize_relative_path,
+)
 
 sys.stdout.reconfigure(encoding='utf-8')
 
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
-
-IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp'}
-
-EXCLUDED_DIRS = {
-    'venv', 'node_modules', '__pycache__', 'site-packages', '.git', '.obsidian',
-    '.ipynb_checkpoints', 'dist-info', '__pypackages__', '.trash', '_build',
-    'Folder Template Structure', 'Discourse Canvas'
-}
-
-EXCLUDED_PREFIXES = ('.', '_', '5_')  # Exclude hidden files and folders and the confidential folder 5
+# Exclusion rules and image extensions live in policy.py -- see that module for
+# why publication and navigation exclusions are kept separate.
 
 MAX_IMAGE_WIDTH = 1200  # pixels
-
-# =============================================================================
-# PATH UTILITIES
-# =============================================================================
-
-def sanitize_filename(filename):
-    """Replace spaces and URL-encoded spaces with underscores"""
-    return filename.replace('%20', '_').replace(' ', '_')
-
-
-def sanitize_path(path_str):
-    """Sanitize all parts of a path"""
-    parts = path_str.replace('\\', '/').split('/')
-    return '/'.join(sanitize_filename(part) for part in parts)
-
-
-def get_relative_path(from_file, to_file):
-    """Calculate relative path from one file to another"""
-    from_dir = Path(from_file).parent
-    try:
-        rel_path = os.path.relpath(to_file, from_dir)
-        return rel_path.replace('\\', '/')
-    except ValueError:
-        return str(to_file).replace('\\', '/')
-
-
-def prettify_folder_name(folder_name):
-    """Convert folder_name to Title Case with spaces"""
-    name = folder_name.lstrip('0123456789_')
-    name = name.replace('_', ' ')
-    return name.title()
 
 
 # =============================================================================
@@ -206,35 +177,27 @@ def build_file_index(source_path):
         file_index: dict mapping sanitized filename -> relative path (for vault-wide lookup)
         path_set: set of all sanitized full paths (for O(1) existence checks)
     """
-    source_path = Path(source_path)
     file_index = {}
     path_set = set()
-    
-    for item in source_path.rglob('*'):
-        if any(part.startswith(EXCLUDED_PREFIXES) or part in EXCLUDED_DIRS or part.endswith('.dist-info')
-               for part in item.relative_to(source_path).parts):
-            continue
-        
-        if item.is_file():
-            relative_path = item.relative_to(source_path)
-            sanitized_path = Path(*[sanitize_filename(part) for part in relative_path.parts])
-            sanitized_path_str = str(sanitized_path).replace('\\', '/')
-            sanitized_filename = sanitize_filename(item.name)
-            
-            # Add to path set for O(1) "does this path exist" checks
-            path_set.add(sanitized_path_str)
-            
-            # Add to filename index for vault-wide lookup
-            if sanitized_filename in file_index:
-                if not isinstance(file_index[sanitized_filename], list):
-                    print(f"Found duplicate: {sanitized_filename}")
-                    print(f"   First:  {file_index[sanitized_filename]}")
-                    file_index[sanitized_filename] = [file_index[sanitized_filename]]
-                print(f"   Another: {sanitized_path_str}")
-                file_index[sanitized_filename].append(sanitized_path_str)
-            else:
-                file_index[sanitized_filename] = sanitized_path_str
-    
+
+    for item, relative_path in iter_vault_files(source_path):
+        sanitized_path_str = sanitize_relative_path(relative_path)
+        sanitized_filename = sanitize_filename(item.name)
+
+        # Add to path set for O(1) "does this path exist" checks
+        path_set.add(sanitized_path_str)
+
+        # Add to filename index for vault-wide lookup
+        if sanitized_filename in file_index:
+            if not isinstance(file_index[sanitized_filename], list):
+                print(f"Found duplicate: {sanitized_filename}")
+                print(f"   First:  {file_index[sanitized_filename]}")
+                file_index[sanitized_filename] = [file_index[sanitized_filename]]
+            print(f"   Another: {sanitized_path_str}")
+            file_index[sanitized_filename].append(sanitized_path_str)
+        else:
+            file_index[sanitized_filename] = sanitized_path_str
+
     return file_index, path_set
 
 
@@ -277,7 +240,7 @@ def convert_obsidian_links(content, current_file, file_index, path_set):
                     print(f"Warning: Path not found: {sanitized_path} (referenced in {current_file})")
                     final_path = sanitized_path
             
-            if ext in IMAGE_EXTENSIONS:
+            if ext in WEB_IMAGE_EXTENSIONS:
                 return f'![]({final_path})'
             else:
                 return f'[Download {filename}]({final_path})'
@@ -297,7 +260,7 @@ def convert_obsidian_links(content, current_file, file_index, path_set):
         rel_path = get_relative_path(current_file, file_path)
         ext = Path(raw_reference).suffix.lower()
         
-        if ext in IMAGE_EXTENSIONS:
+        if ext in WEB_IMAGE_EXTENSIONS:
             return f'![]({rel_path})'
         else:
             return f'[Download {raw_reference}]({rel_path})'
@@ -403,9 +366,8 @@ def process_markdown_file(file_path, output_path, file_index, path_set, source_r
             content = f.read()
         
         relative_file_path = file_path.relative_to(source_root)
-        sanitized_relative_path = Path(*[sanitize_filename(part) for part in relative_file_path.parts])
-        sanitized_relative_str = str(sanitized_relative_path).replace('\\', '/')
-        
+        sanitized_relative_str = sanitize_relative_path(relative_file_path)
+
         content = process_markdown_content(content, sanitized_relative_str, file_index, path_set)
         
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -432,34 +394,29 @@ def create_staging_directory(source_path, staging_path):
     file_index, path_set = build_file_index(source_path)
     print(f"Indexed {len(file_index)} unique filenames, {len(path_set)} total paths")
     
-    for item in source_path.rglob('*'):
-        if any(part.startswith(EXCLUDED_PREFIXES) or part in EXCLUDED_DIRS or part.endswith('.dist-info')
-               for part in item.relative_to(source_path).parts):
-            continue
-        
-        if item.is_file():
-            relative_path = item.relative_to(source_path)
-            sanitized_relative = Path(*[sanitize_filename(part) for part in relative_path.parts])
-            output_path = staging_path / sanitized_relative
-            
-            if item.suffix == '.md':
-                print(f"Processing: {relative_path}")
-                process_markdown_file(item, output_path, file_index, path_set, source_path)
-            else:
-                output_path.parent.mkdir(parents=True, exist_ok=True)
-                if item.suffix == '.ipynb':
-                    try:
-                        json.load(open(item))
-                    except (json.JSONDecodeError, ValueError):
-                        print(f"⚠️  Skipping invalid notebook: {relative_path}")
-                        continue
-                shutil.copy2(item, output_path)
-                if output_path.suffix.lower() in IMAGE_EXTENSIONS:
-                    try:
-                        optimize_image(output_path)
-                    except Exception as e:
-                        print(f"Warning: Could not optimize {output_path}: {e}")
-    
+    for item, relative_path in iter_vault_files(source_path):
+        output_path = staging_path / sanitize_relative_path(relative_path)
+
+        if item.suffix == '.md':
+            print(f"Processing: {relative_path}")
+            process_markdown_file(item, output_path, file_index, path_set, source_path)
+        else:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            if item.suffix == '.ipynb':
+                try:
+                    with open(item, encoding='utf-8') as f:
+                        json.load(f)
+                except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
+                    print(f"⚠️  Skipping invalid notebook: {relative_path}")
+                    continue
+            shutil.copy2(item, output_path)
+            if output_path.suffix.lower() in WEB_IMAGE_EXTENSIONS:
+                try:
+                    optimize_image(output_path)
+                except Exception as e:
+                    print(f"Warning: Could not optimize {output_path}: {e}")
+
+
     print(f"Staging directory created at {staging_path}")
     return staging_path
 
