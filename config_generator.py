@@ -220,8 +220,11 @@ def build_site_config(toc, site_title="QBI Research"):
             'options': {
                 'favicon': '_static/Favicon - Institute.png',
                 'logo': '_static/Copy of QuBio Institute Primary Light Mode.png',
+                # Intentional: the Light Mode asset is the only logo we have, so
+                # it serves both themes. Not a copy-paste slip.
                 'logo_dark': '_static/Copy of QuBio Institute Primary Light Mode.png',
-                'style': '_static/style.css'
+                'style': '_static/style.css',
+                'hide_footer_links': True
             }
         }
     }

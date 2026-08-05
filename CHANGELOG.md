@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+### Fixed
+- **Frontmatter injection no longer corrupts files that already have frontmatter.**
+  Titles were spliced at a hardcoded string offset, colliding with the opening
+  `---` delimiter and emitting invalid YAML (`---title: Entry`) for every vault
+  file with frontmatter but no `title:` key.
+- Content opening with a horizontal rule (`--- some text`) is no longer misread
+  as frontmatter and silently left without a title.
+- `subtitle:` is no longer mistaken for an existing `title:` (the check now
+  parses the block instead of substring-matching).
+- Titles containing colons, apostrophes, or both are now quoted and escaped by
+  PyYAML rather than by hand, so they round-trip correctly.
+- CRLF line endings are preserved when merging into existing frontmatter.
+
+### Added
+- `hide_footer_links` site option, emitted as a real YAML boolean.
+- Test suite: 108 tests covering the transform chain, staging exclusion policy,
+  and `myst.yml` generation.
+- Pinned dependency versions in `requirements.txt`.
+
+### Removed
+- `generate_myst.py` and `utils.py` — both superseded and imported by nothing.
+
 ## [0.4.0] - 2025-02-25
 ### Added
 - Image optimization pipeline (Phase 4): resizes images wider than 1200px and compresses for web delivery
