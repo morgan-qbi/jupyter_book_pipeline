@@ -1,7 +1,36 @@
-# .gitignore
+# --- Python ---
 __pycache__/
 *.pyc
+.pytest_cache/
+venv/
+.venv/
+env/
+
+# --- OS ---
 .DS_Store
-_build_staging/
-*.yml
+Thumbs.db
+
+# --- Secrets ---
 .env
+*.key
+*.pem
+credentials.json
+
+# --- Build output ---
+# Staging is generated and published; never commit it.
+_build_staging/
+_build/
+
+# --- Generated reports ---
+# Audit reports list vault filenames, which may be confidential. Keep local.
+reports/
+audit_reports/
+
+# --- Local config ---
+# The real build config holds server paths; commit the example instead.
+# NOTE: deliberately narrow. A blanket `*.yml` would also swallow
+# .github/workflows/*.yml and any generated myst.yml.
+/build_config.yml
+
+# --- Working documents ---
+REFACTOR_PLAN.md
