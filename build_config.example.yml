@@ -1,0 +1,42 @@
+# QBI Build Configuration — example
+#
+# Copy to build_config.yml (which is gitignored) and adjust paths.
+# Usage: python build_pipeline.py -c build_config.yml
+
+# Where the site is staged. Synced incrementally, not rebuilt, so this
+# directory can safely be a git repository.
+#
+# It must not be, or contain, a vault or the root path — the build refuses
+# those outright, because sync prunes files it considers stale.
+output: "/mnt/raid-storage/shared/_build_staging"
+
+# Optional. Its README/index is used as the site homepage.
+root: "/mnt/raid-storage/shared"
+
+vaults:
+  - path: "/mnt/raid-storage/shared/research-biology-md"
+  - path: "/mnt/raid-storage/shared/research-biology-la"
+  - path: "/mnt/raid-storage/shared/research-physics-la"
+  - path: "/mnt/raid-storage/shared/research-physics-theory"
+  - path: "/mnt/raid-storage/shared/research-bio-redox"
+
+# File types are published by permission, not by omission: anything not on the
+# allow-list is skipped and reported. The default covers pages (.md, .ipynb),
+# web images, and .pdf/.stl/.obj/.ino/.py.
+#
+# Every build prints an extension census per vault showing what was published
+# and what was skipped, and warns when a page links to a file the allow-list
+# left out. Add anything from that report here — no code change needed.
+#
+# publish_extensions:
+#   - .csv
+#   - .xlsx
+
+# ---------------------------------------------------------------------------
+# Keeping content off the website
+# ---------------------------------------------------------------------------
+# Two mechanisms, both enforced identically in staging, navigation and audits:
+#
+#   1. Folders named 5_*  are confidential by convention.
+#   2. A .qbi-exclude file in any folder excludes that folder and everything
+#      beneath it. Researchers can add one anywhere without renaming.

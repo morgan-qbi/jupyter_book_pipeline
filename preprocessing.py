@@ -1,9 +1,7 @@
 import re
-import shutil
 from pathlib import Path
 import sys
 from PIL import Image, ImageOps
-import json
 import yaml
 
 from policy import WEB_IMAGE_EXTENSIONS, iter_vault_files
@@ -201,19 +199,34 @@ def build_file_index(source_path):
     return file_index, path_set
 
 
-def convert_obsidian_links(content, current_file, file_index, path_set):
+def convert_obsidian_links(content, current_file, file_index, path_set, unpublished=None):
     """
     Convert Obsidian ![[...]] links to standard markdown.
-    
+
     Handles:
     - ![[filename.png]] -> vault-wide lookup by filename
     - ![[path/to/file.png]] -> explicit path (tries relative, then absolute from root)
+
+    `unpublished` is the set of vault paths that exist but were skipped by the
+    publication allow-list. A page referencing one of those would render a link
+    to a file that was never staged, so it is reported: that is the failure mode
+    an allow-list has, and it is silent unless something says so.
     """
     pattern = r'!\[\[(.*?)\]\]'
-    
+    unpublished = unpublished or set()
+
+    def warn_if_unpublished(resolved_path, reference):
+        if resolved_path in unpublished:
+            print(
+                f"Warning: {current_file} references {reference}, which exists "
+                f"in the vault but is not a published file type. The link will "
+                f"be broken. Add its extension to `publish_extensions` if it "
+                f"belongs on the site."
+            )
+
     def replacement(match):
         raw_reference = match.group(1)
-        
+
         # Explicit path provided
         if '/' in raw_reference or '\\' in raw_reference:
             sanitized_path = sanitize_path(raw_reference)
@@ -240,6 +253,8 @@ def convert_obsidian_links(content, current_file, file_index, path_set):
                     print(f"Warning: Path not found: {sanitized_path} (referenced in {current_file})")
                     final_path = sanitized_path
             
+            warn_if_unpublished(sanitized_path, raw_reference)
+
             if ext in WEB_IMAGE_EXTENSIONS:
                 return f'![]({final_path})'
             else:
@@ -259,7 +274,8 @@ def convert_obsidian_links(content, current_file, file_index, path_set):
         
         rel_path = get_relative_path(current_file, file_path)
         ext = Path(raw_reference).suffix.lower()
-        
+        warn_if_unpublished(file_path, raw_reference)
+
         if ext in WEB_IMAGE_EXTENSIONS:
             return f'![]({rel_path})'
         else:
@@ -310,115 +326,100 @@ def fix_text_issues(content):
 # PHASE 4: IMAGE OPTIMIZATION
 # =============================================================================
 
-def optimize_image(image_path):
-    """Resize and compress images for web delivery"""
-    return  # DISABLED for now — skipping optimization, images ship as-is
-    
+# Formats Pillow can re-encode here. SVG is text, and GIF may be animated;
+# both are left exactly as they are.
+OPTIMIZABLE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp'}
+
+# Ceiling on total pixels before an image is treated as hostile rather than
+# merely large. Guards against decompression bombs, since vault images are
+# untrusted input. 8000x8000 is far beyond any real lab photograph.
+MAX_IMAGE_PIXELS = 64_000_000
+
+
+def strip_exif(img):
     """
+    Return a copy of the image carrying no EXIF metadata.
+
+    Phone photographs of lab notebooks embed GPS coordinates, device serial
+    numbers and timestamps. Publishing those alongside research notes discloses
+    where and when the work happened, so stripping is unconditional and does
+    not depend on whether resizing or recompression is enabled (S-6).
+
+    Pillow carries metadata in `img.info` and writes it back out on save (the
+    JPEG encoder reads `info['exif']` even when no exif argument is passed), so
+    clearing that dict is what actually drops it. Copying rather than rebuilding
+    from pixel data keeps palettes and transparency intact.
+    """
+    clean = img.copy()
+    clean.info = {}
+    return clean
+
+
+def optimize_image(image_path):
+    """
+    Strip metadata from an image, and resize/compress it for web delivery.
+
+    Always rewrites the staged copy, never the vault original. Failures are
+    non-fatal: a single unreadable image must not take down a build, so the
+    file is left as-is and the build continues.
+    """
+    image_path = Path(image_path)
     ext = image_path.suffix.lower()
-    if ext not in {'.jpg', '.jpeg', '.png', '.webp'}:
-        return  # skip SVG, GIF, BMP
+    if ext not in OPTIMIZABLE_EXTENSIONS:
+        return False
 
     try:
-        img = Image.open(image_path)
-        img.load()  # force full read before any save (avoids streamed-PNG _idat bug)
-        img = ImageOps.exif_transpose(img)  # apply EXIF rotation to actual pixels
+        with Image.open(image_path) as img:
+            if img.width * img.height > MAX_IMAGE_PIXELS:
+                print(f"  [skip] refusing oversized image ({img.width}x{img.height}): {image_path}")
+                return False
 
-        if img.width > MAX_IMAGE_WIDTH:
-            ratio = MAX_IMAGE_WIDTH / img.width
-            new_height = int(img.height * ratio)
-            img = img.resize((MAX_IMAGE_WIDTH, new_height), Image.LANCZOS)
+            # Force a full read before saving; a streamed PNG otherwise fails
+            # on write with an _idat error.
+            img.load()
 
-        # Save with compression
-        if ext in {'.jpg', '.jpeg'}:
-            img.save(image_path, quality=80, optimize=True)
-        elif ext == '.png':
-            img.save(image_path, optimize=True)
-        elif ext == '.webp':
-            img.save(image_path, quality=80)
+            # Bake EXIF rotation into the pixels before the orientation tag is
+            # discarded, or stripped images come out sideways.
+            img = ImageOps.exif_transpose(img)
+
+            if img.width > MAX_IMAGE_WIDTH:
+                ratio = MAX_IMAGE_WIDTH / img.width
+                img = img.resize((MAX_IMAGE_WIDTH, int(img.height * ratio)), Image.LANCZOS)
+
+            img = strip_exif(img)
+
+            if ext in {'.jpg', '.jpeg'}:
+                img.save(image_path, quality=80, optimize=True)
+            elif ext == '.png':
+                img.save(image_path, optimize=True)
+            elif ext == '.webp':
+                img.save(image_path, quality=80)
+
+        return True
 
     except Exception as e:
         print(f"  [skip] couldn't optimize {image_path}: {e}")
-        return  # leave original in place, keep the build going
-    """
+        return False
 # =============================================================================
 # MAIN PROCESSING PIPELINE
 # =============================================================================
 
-def process_markdown_content(content, current_file, file_index, path_set):
+def process_markdown_content(content, current_file, file_index, path_set, unpublished=None):
     """Process markdown through the full pipeline"""
     # Phase 0a - inject frontmatter title from filename
     title = prettify_folder_name(Path(current_file).stem)
     content = inject_frontmatter(content, title)
-    
+
     content = ensure_image_linebreaks(content)    # Phase 0b - ensure block images
     content = normalize_all_paths(content)         # Phase 1
-    content = convert_obsidian_links(content, current_file, file_index, path_set)  # Phase 2
+    content = convert_obsidian_links(content, current_file, file_index, path_set, unpublished)  # Phase 2
     content = rewrite_absolute_paths(content, current_file, path_set)  # Phase 2b
     content = fix_text_issues(content)             # Phase 3
     return content
 
 
-def process_markdown_file(file_path, output_path, file_index, path_set, source_root):
-    """Read markdown file, process it, write to output"""
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        relative_file_path = file_path.relative_to(source_root)
-        sanitized_relative_str = sanitize_relative_path(relative_file_path)
-
-        content = process_markdown_content(content, sanitized_relative_str, file_index, path_set)
-        
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write(content)
-        
-        return True
-    except Exception as e:
-        print(f"Error processing {file_path}: {e}")
-        return False
-
-
-def create_staging_directory(source_path, staging_path):
-    """Create staging directory with processed files"""
-    source_path = Path(source_path)
-    staging_path = Path(staging_path)
-    
-    if staging_path.exists():
-        shutil.rmtree(staging_path)
-    staging_path.mkdir(parents=True)
-    
-    print(f"Creating staging directory: {staging_path}")
-    print("Building file index...")
-    file_index, path_set = build_file_index(source_path)
-    print(f"Indexed {len(file_index)} unique filenames, {len(path_set)} total paths")
-    
-    for item, relative_path in iter_vault_files(source_path):
-        output_path = staging_path / sanitize_relative_path(relative_path)
-
-        if item.suffix == '.md':
-            print(f"Processing: {relative_path}")
-            process_markdown_file(item, output_path, file_index, path_set, source_path)
-        else:
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            if item.suffix == '.ipynb':
-                try:
-                    with open(item, encoding='utf-8') as f:
-                        json.load(f)
-                except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
-                    print(f"⚠️  Skipping invalid notebook: {relative_path}")
-                    continue
-            shutil.copy2(item, output_path)
-            if output_path.suffix.lower() in WEB_IMAGE_EXTENSIONS:
-                try:
-                    optimize_image(output_path)
-                except Exception as e:
-                    print(f"Warning: Could not optimize {output_path}: {e}")
-
-
-    print(f"Staging directory created at {staging_path}")
-    return staging_path
+# Staging lives in staging.py: it reconciles a vault into the published
+# directory incrementally rather than deleting and rebuilding it.
 
 
 # =============================================================================

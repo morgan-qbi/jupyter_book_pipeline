@@ -6,7 +6,51 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- **Staging is now synced incrementally instead of deleted and rebuilt.** Only
+  new and changed files are written, and files that no longer exist in a vault
+  are pruned. The staging directory can therefore be kept under version
+  control — the previous `shutil.rmtree` would have deleted `.git` along with
+  everything else — and `git status` there now shows exactly what a build
+  changed.
+- **Files are published by permission, not by omission.** Only allow-listed
+  extensions are staged; anything else is skipped and reported. Extra types can
+  be opted in via `publish_extensions` in the build config.
+- Every build prints a per-vault **extension census** of what was published and
+  what was skipped, and warns when a page links to a file the allow-list left
+  out. Confidential and `.qbi-exclude` subtrees are reported as counts only,
+  never by name.
+
+### Added
+- `.qbi-exclude` marker file: excludes the folder it sits in and everything
+  beneath it, so content can be kept off the site without renaming anything.
+- `--dry-run` to preview what a build would change without writing.
+- Single source of truth for publication policy (`policy.py`) and naming
+  (`naming.py`), shared by the build, config generation and audit tooling.
+
+### Security
+- Staging no longer deletes the directory `output` points at. Output paths that
+  are, or contain, a vault or the root are rejected, and a non-empty directory
+  without a `.qbi-staging` marker is refused outright.
+- Symlinked files are refused rather than dereferenced, so a link inside a vault
+  can no longer publish the contents of a file outside it.
+- Audit reports no longer scan or name files inside confidential folders.
+- Site navigation enforces the confidential-folder rule itself rather than
+  relying on preprocessing having already stripped those folders.
+- Image EXIF (GPS coordinates, device serials, timestamps) is now stripped
+  unconditionally.
+
 ### Fixed
+- Image optimization is working again: resizing above 1200px, recompression,
+  EXIF orientation applied before metadata is dropped, and a decompression-bomb
+  guard. Optimized images are no longer re-encoded on every build, which was
+  degrading JPEG quality cumulatively.
+- The MyST project id is stable across builds instead of a fresh UUID each run.
+- `vault_audit.py` no longer crashes with `UnicodeEncodeError` when printing a
+  report on a Windows console.
+- `prettify_folder_name` had three different behaviors across four copies. Page
+  titles for all-digit filenames (e.g. `2025.md`) were empty, and hyphenated
+  names rendered as `Research-Biology-La` rather than `Research Biology La`.
 - **Frontmatter injection no longer corrupts files that already have frontmatter.**
   Titles were spliced at a hardcoded string offset, colliding with the opening
   `---` delimiter and emitting invalid YAML (`---title: Entry`) for every vault

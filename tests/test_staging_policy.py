@@ -1,9 +1,8 @@
-"""Security regression tests: what does and does not reach the staging directory.
+"""Security tests: what does and does not reach the staging directory.
 
 Staging is published publicly, so these are the highest-value tests in the
-suite. They currently encode the CURRENT policy, including the ways it fails
-open (S-1, S-2, S-3). When Phase 2 lands, the KNOWN-WRONG assertions here flip
-and become the real guarantees.
+suite. Phase 2 turned staging from copy-everything-except-a-denylist into an
+allow-list, so the assertions that used to document leaks are now guarantees.
 """
 
 import os
@@ -11,7 +10,9 @@ import sys
 
 import pytest
 
-from preprocessing import build_file_index, create_staging_directory
+from policy import PUBLISHABLE_EXTENSIONS
+from preprocessing import build_file_index
+from staging import assert_safe_staging_target, claim_staging_directory, sync_vault
 
 
 def write(path, content="content\n"):
@@ -40,93 +41,154 @@ def vault(tmp_path):
     return v
 
 
+@pytest.fixture
+def staging(tmp_path):
+    out = tmp_path / "out"
+    claim_staging_directory(out)
+    return out
+
+
 def staged_files(staging):
+    """Staged files, ignoring pipeline bookkeeping."""
     return {
         str(p.relative_to(staging)).replace("\\", "/")
-        for p in staging.rglob("*") if p.is_file()
+        for p in staging.rglob("*")
+        if p.is_file() and not p.name.startswith(".qbi-")
+    }
+
+
+def sync(vault, staging, **kwargs):
+    return sync_vault(vault, staging, **kwargs)
+
+
+# =============================================================================
+# Exclusions
+# =============================================================================
+
+def test_confidential_prefix_folder_is_not_staged(vault, staging):
+    sync(vault, staging)
+    files = staged_files(staging)
+    assert "5_confidential/secret.md" not in files
+    assert not any(f.startswith("5_") for f in files)
+
+
+def test_underscore_and_dot_prefixes_are_not_staged(vault, staging):
+    sync(vault, staging)
+    files = staged_files(staging)
+    assert "_private/draft.md" not in files
+    assert ".obsidian/app.json" not in files
+
+
+def test_vendored_directories_are_not_staged(vault, staging):
+    sync(vault, staging)
+    assert not any(
+        f.startswith(("venv/", "node_modules/", "Discourse Canvas/"))
+        for f in staged_files(staging)
+    )
+
+
+def test_prefix_rule_applies_to_files_not_just_directories(vault, staging):
+    sync(vault, staging)
+    assert "5_restricted.md" not in staged_files(staging)
+
+
+def test_exact_staged_set_is_locked(vault, staging):
+    sync(vault, staging)
+    assert staged_files(staging) == {
+        "README.md", "notes.md", "1_eln/entry.md", "attachments/img.png",
     }
 
 
 # =============================================================================
-# Exclusions that work today
+# Allow-list  (D-1 / S-2)
 # =============================================================================
 
-def test_confidential_prefix_folder_is_not_staged(vault, tmp_path):
-    staged = staged_files(create_staging_directory(vault, tmp_path / "out"))
-    assert "5_confidential/secret.md" not in staged
-    assert not any(s.startswith("5_") for s in staged)
-
-
-def test_underscore_and_dot_prefixes_are_not_staged(vault, tmp_path):
-    staged = staged_files(create_staging_directory(vault, tmp_path / "out"))
-    assert "_private/draft.md" not in staged
-    assert ".obsidian/app.json" not in staged
-
-
-def test_vendored_directories_are_not_staged(vault, tmp_path):
-    staged = staged_files(create_staging_directory(vault, tmp_path / "out"))
-    assert not any(s.startswith(("venv/", "node_modules/", "Discourse Canvas/")) for s in staged)
-
-
-def test_prefix_rule_applies_to_files_not_just_directories(vault, tmp_path):
-    staged = staged_files(create_staging_directory(vault, tmp_path / "out"))
-    assert "5_restricted.md" not in staged
-
-
-def test_publishable_content_is_staged(vault, tmp_path):
-    staged = staged_files(create_staging_directory(vault, tmp_path / "out"))
-    assert {"README.md", "notes.md", "1_eln/entry.md", "attachments/img.png"} <= staged
-
-
-def test_exact_staged_set_is_locked(vault, tmp_path):
-    """Full snapshot, so any change in exclusion behavior fails loudly."""
-    staged = staged_files(create_staging_directory(vault, tmp_path / "out"))
-    assert staged == {"README.md", "notes.md", "1_eln/entry.md", "attachments/img.png"}
-
-
-# =============================================================================
-# Ways the policy fails open
-# =============================================================================
-
-def test_confidential_folder_without_the_magic_prefix_is_published(vault, tmp_path):
-    """KNOWN-WRONG (S-1): exclusion is prefix-matching on a name, so any folder
-    a researcher names anything other than `5_*` publishes."""
-    write(vault / "Confidential" / "hr_records.md", "SALARY DATA\n")
-    write(vault / "05_Private" / "notes.md", "private\n")
-
-    staged = staged_files(create_staging_directory(vault, tmp_path / "out"))
-    assert "Confidential/hr_records.md" in staged   # <- leaks
-    assert "05_Private/notes.md" in staged          # <- leaks
-
-
-def test_arbitrary_non_publishable_files_are_published(vault, tmp_path):
-    """KNOWN-WRONG (S-2): staging is copy-everything-except-a-denylist, so any
-    file type in a vault reaches the public site."""
+def test_non_publishable_types_are_skipped(vault, staging):
+    """S-2 regression guard: staging used to copy every file type, so a
+    spreadsheet or key file dropped in a vault went straight to the web."""
     write(vault / "grant_budget.csv", "salary,amount\n")
     write(vault / "api_keys.txt", "sk-live-secret\n")
+    write(vault / "notes.docx", "x")
 
-    staged = staged_files(create_staging_directory(vault, tmp_path / "out"))
-    assert "grant_budget.csv" in staged   # <- leaks
-    assert "api_keys.txt" in staged       # <- leaks
+    sync(vault, staging)
+    files = staged_files(staging)
 
+    assert "grant_budget.csv" not in files
+    assert "api_keys.txt" not in files
+    assert "notes.docx" not in files
+
+
+def test_publishable_types_are_staged(vault, staging):
+    write(vault / "paper.pdf", "%PDF-1.4\n")
+    write(vault / "model.stl", "solid\n")
+
+    sync(vault, staging)
+    files = staged_files(staging)
+
+    assert "paper.pdf" in files
+    assert "model.stl" in files
+
+
+def test_extra_extensions_can_be_opted_in(vault, staging):
+    """The census reports skipped types; opting one in is a config change."""
+    write(vault / "dataset.csv", "a,b\n")
+
+    sync(vault, staging, allowed_extensions=PUBLISHABLE_EXTENSIONS | {".csv"})
+    assert "dataset.csv" in staged_files(staging)
+
+
+def test_census_counts_published_and_skipped(vault, staging):
+    write(vault / "dataset.csv", "a,b\n")
+    write(vault / "other.csv", "a,b\n")
+
+    census, _ = sync(vault, staging)
+
+    assert census.published[".md"] == 3
+    assert census.skipped[".csv"] == 2
+    assert census.has_skips is True
+
+
+def test_census_reports_skipped_types_loudly(vault, staging):
+    write(vault / "dataset.csv", "a,b\n")
+    census, _ = sync(vault, staging)
+    rendered = "\n".join(census.render("test-vault"))
+
+    assert ".csv" in rendered
+    assert "SKIPPED" in rendered
+    assert "publish_extensions" in rendered
+
+
+def test_census_reports_excluded_subtrees_by_count_only(vault, staging):
+    """Confidential content must be visible as a number, never as a name."""
+    census, _ = sync(vault, staging)
+    rendered = "\n".join(census.render("test-vault"))
+
+    assert "excluded by policy" in rendered
+    assert "secret" not in rendered
+    assert "confidential" not in rendered.lower()
+
+
+# =============================================================================
+# Symlinks  (S-3)
+# =============================================================================
 
 @pytest.mark.skipif(
     sys.platform == "win32" and not os.environ.get("CI"),
     reason="symlink creation needs Developer Mode or admin on Windows; prod is Linux",
 )
-def test_symlinked_file_is_dereferenced_and_its_target_published(vault, tmp_path):
-    """KNOWN-WRONG (S-3): shutil.copy2 follows symlinks, so a link inside a
-    vault publishes the contents of a file outside the vault."""
+def test_symlinked_file_is_refused_not_dereferenced(vault, staging, tmp_path):
+    """S-3 regression guard: shutil.copy2 follows symlinks, so a link inside a
+    vault used to publish the contents of a file outside it."""
     outside = write(tmp_path / "outside" / "private_key", "BEGIN PRIVATE KEY\n")
     try:
         os.symlink(outside, vault / "innocuous.md")
     except (OSError, NotImplementedError):
         pytest.skip("symlinks unavailable in this environment")
 
-    staging = create_staging_directory(vault, tmp_path / "out")
-    leaked = staging / "innocuous.md"
-    assert leaked.is_file()
-    assert "BEGIN PRIVATE KEY" in leaked.read_text(encoding="utf-8")  # <- leaks
+    _, changes = sync(vault, staging)
+
+    assert not (staging / "innocuous.md").exists()
+    assert changes["skipped_symlink"] == 1
 
 
 # =============================================================================
@@ -156,3 +218,42 @@ def test_duplicate_filenames_are_collected_into_a_list(tmp_path):
     index, _ = build_file_index(v)
     assert isinstance(index["dup.md"], list)
     assert sorted(index["dup.md"]) == ["a/dup.md", "b/dup.md"]
+
+
+# =============================================================================
+# Staging target safety  (S-4)
+# =============================================================================
+
+def test_refuses_a_non_empty_directory_without_a_marker(tmp_path):
+    """S-4 regression guard: staging used to rmtree whatever `output` pointed
+    at, so one typo in the config could take out the research share."""
+    real_data = tmp_path / "shared"
+    write(real_data / "important.md", "REAL RESEARCH DATA\n")
+
+    with pytest.raises(ValueError, match="Refusing to use"):
+        assert_safe_staging_target(real_data)
+
+    assert (real_data / "important.md").exists()
+
+
+def test_accepts_an_empty_directory(tmp_path):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert_safe_staging_target(empty)
+
+
+def test_accepts_a_nonexistent_directory(tmp_path):
+    assert_safe_staging_target(tmp_path / "not-yet")
+
+
+def test_accepts_a_directory_it_previously_claimed(tmp_path):
+    out = tmp_path / "out"
+    claim_staging_directory(out)
+    write(out / "page.md")
+    assert_safe_staging_target(out)
+
+
+def test_rejects_a_file(tmp_path):
+    target = write(tmp_path / "afile.txt")
+    with pytest.raises(ValueError, match="not a directory"):
+        assert_safe_staging_target(target)

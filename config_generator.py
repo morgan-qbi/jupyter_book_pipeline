@@ -178,12 +178,41 @@ def scan_vault_structure(vault_path, base_path):
     return vault_entry
 
 
-def build_site_config(toc, site_title="QBI Research"):
+# Namespace for deriving stable project ids. Arbitrary but fixed: changing it
+# would change every project id.
+QBI_NAMESPACE = uuid.UUID('6f5c1e2a-9b34-5d78-a1c6-2f0e7b4d8a35')
+
+
+def stable_project_id(site_title, existing_config_path=None):
+    """
+    Return a project id that does not change between builds.
+
+    A fresh uuid4 per build meant the site's identity changed every run, which
+    would break DOI and metadata work (S-11). An id already present in a
+    previously generated myst.yml wins, so identity survives even a site
+    rename; otherwise it is derived deterministically from the title.
+    """
+    if existing_config_path:
+        existing_config_path = Path(existing_config_path)
+        if existing_config_path.exists():
+            try:
+                with open(existing_config_path, encoding='utf-8') as f:
+                    existing = yaml.safe_load(f) or {}
+                previous = existing.get('project', {}).get('id')
+                if previous:
+                    return str(previous)
+            except (yaml.YAMLError, OSError):
+                pass
+
+    return str(uuid.uuid5(QBI_NAMESPACE, site_title))
+
+
+def build_site_config(toc, site_title="QBI Research", existing_config_path=None):
     """Build the full myst.yml config dict"""
     return {
         'version': 1,
         'project': {
-            'id': str(uuid.uuid4()),
+            'id': stable_project_id(site_title, existing_config_path),
             'title': site_title,
             'description': 'Research documentation from the Quantum Biology Institute',
             'open_access': True,
@@ -239,11 +268,11 @@ def generate_multi_vault_config(staged_vaults, staging_path):
         if vault_entry['children']:
             toc.append(vault_entry)
 
-    config = build_site_config(toc)
-
     output_file = staging_path / 'myst.yml'
-    with open(output_file, 'w') as f:
-        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+    config = build_site_config(toc, existing_config_path=output_file)
+
+    with open(output_file, 'w', encoding='utf-8') as f:
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
     print(f"Generated myst.yml at {output_file}")
     return config
@@ -273,11 +302,13 @@ def generate_myst_config(bucket_path, bucket_name, output_path="myst.yml"):
         if project_entry['children']:
             toc.append(project_entry)
 
-    config = build_site_config(toc, get_display_name(bucket_name))
-
     output_file = bucket_path / output_path
-    with open(output_file, 'w') as f:
-        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+    config = build_site_config(
+        toc, get_display_name(bucket_name), existing_config_path=output_file
+    )
+
+    with open(output_file, 'w', encoding='utf-8') as f:
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
     print(f"Generated myst.yml at {output_file}")
     return config

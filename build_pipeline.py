@@ -4,12 +4,20 @@ QBI Jupyter Books Build Pipeline
 Orchestrates preprocessing and config generation for one or more Obsidian
 research vaults into a single MyST site.
 
+Staging is synced rather than rebuilt: only new and changed files are written,
+and files that no longer exist in a vault are pruned. That keeps the staging
+directory usable as a git repository, and makes `git status` there show exactly
+what a build changed.
+
 Usage:
-    # Single vault (CLI mode, backwards compatible)
+    # Single vault
     python build_pipeline.py ../research_biology_la ../_build_staging
 
-    # Multi vault (config file mode)
+    # Multi vault
     python build_pipeline.py --config build_config.yml
+
+    # Preview what would change, writing nothing
+    python build_pipeline.py --config build_config.yml --dry-run
 """
 
 import sys
@@ -17,8 +25,61 @@ import shutil
 import argparse
 import yaml
 from pathlib import Path
-from preprocessing import create_staging_directory
-from config_generator import generate_myst_config, generate_multi_vault_config, find_homepage
+
+from config_generator import (
+    find_homepage,
+    generate_multi_vault_config,
+    generate_myst_config,
+)
+from policy import PUBLISHABLE_EXTENSIONS
+from staging import (
+    assert_safe_staging_target,
+    claim_staging_directory,
+    render_changes,
+    sync_vault,
+)
+
+
+def resolve_publishable_extensions(config):
+    """
+    Merge any `publish_extensions` from the build config into the default
+    allow-list.
+
+    Opting a file type in is a config change rather than a code change, so the
+    extension census can be acted on directly.
+    """
+    extra = config.get('publish_extensions') or []
+    normalized = {
+        ext.lower() if ext.startswith('.') else f'.{ext.lower()}'
+        for ext in extra
+    }
+    if normalized:
+        print(f"Additional published extensions from config: {', '.join(sorted(normalized))}")
+    return PUBLISHABLE_EXTENSIONS | normalized
+
+
+def validate_output_path(output, vaults, root=None):
+    """
+    Refuse an output path that would put staging on top of source data.
+
+    Sync prunes files it considers stale, so pointing `output` at a vault or at
+    the shared root -- one typo away in the config -- must be rejected outright
+    rather than discovered afterwards (S-4).
+    """
+    output = Path(output).resolve()
+
+    protected = [Path(v).resolve() for v in vaults]
+    if root:
+        protected.append(Path(root).resolve())
+
+    for path in protected:
+        if output == path:
+            raise ValueError(f"Output directory must not be a source path: {output}")
+        if path.is_relative_to(output):
+            raise ValueError(
+                f"Output directory {output} contains source path {path}. "
+                f"Staging would prune files inside it."
+            )
 
 
 def load_build_config(config_path):
@@ -28,10 +89,9 @@ def load_build_config(config_path):
         print(f"Error: Config file not found: {config_path}")
         sys.exit(1)
 
-    with open(config_path, 'r') as f:
+    with open(config_path, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
 
-    # Validate required fields
     if 'output' not in config:
         print("Error: Config must specify 'output' directory")
         sys.exit(1)
@@ -40,47 +100,59 @@ def load_build_config(config_path):
         print("Error: Config must specify at least one vault")
         sys.exit(1)
 
-    # Validate optional root path
     if 'root' in config:
         root_path = Path(config['root'])
         if not root_path.is_dir():
             print(f"Error: Root path not found: {root_path}")
             sys.exit(1)
 
-    # Validate vault paths exist
     for vault in config['vaults']:
         vault_path = Path(vault['path'])
         if not vault_path.is_dir():
             print(f"Error: Vault path not found: {vault_path}")
             sys.exit(1)
 
+    try:
+        validate_output_path(
+            config['output'],
+            [v['path'] for v in config['vaults']],
+            config.get('root'),
+        )
+    except ValueError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+
     return config
 
 
-def build_single_vault(source_path, staging_dir):
-    """
-    Single vault pipeline (backwards compatible).
-    Stage files, convert syntax, generate config, ready to build.
-    """
+def build_single_vault(source_path, staging_dir, dry_run=False):
+    """Sync a single vault into staging and generate its myst.yml"""
     source_path = Path(source_path)
     staging_path = Path(staging_dir)
     bucket_name = source_path.name.replace('_local', '').replace('_gcs', '')
 
     print("=" * 50)
-    print("Starting single-vault build preparation")
+    print("Starting single-vault build")
     print(f"Source: {source_path}")
     print(f"Output: {staging_path}")
+    if dry_run:
+        print("DRY RUN - nothing will be written")
     print("=" * 50)
 
-    # Create staging directory with processed files
-    staging_path = create_staging_directory(source_path, staging_path)
+    assert_safe_staging_target(staging_path)
+    if not dry_run:
+        claim_staging_directory(staging_path)
 
-    # Generate myst.yml in staging directory
-    print("\nGenerating myst.yml...")
-    generate_myst_config(staging_path, bucket_name)
+    census, changes = sync_vault(source_path, staging_path, dry_run=dry_run)
+    print(render_changes(changes))
+    print('\n'.join(census.render(source_path.name)))
+
+    if not dry_run:
+        print("\nGenerating myst.yml...")
+        generate_myst_config(staging_path, bucket_name)
 
     print("\n" + "=" * 50)
-    print("Build preparation complete!")
+    print("Build complete!")
     print(f"Staging directory: {staging_path}")
     print("\nTo build and preview:")
     print(f"  cd {staging_path}")
@@ -90,23 +162,26 @@ def build_single_vault(source_path, staging_dir):
     return staging_path
 
 
-def build_multi_vault(config):
-    """
-    Multi vault pipeline.
-    Preprocess each vault into nested staging directories,
-    then generate unified myst.yml.
-    """
+def build_multi_vault(config, dry_run=False):
+    """Sync every configured vault into staging and generate a unified myst.yml"""
     staging_path = Path(config['output'])
     vault_configs = config['vaults']
+    allowed = resolve_publishable_extensions(config)
 
     print("=" * 50)
-    print("Starting multi-vault build preparation")
+    print("Starting multi-vault build")
     print(f"Output: {staging_path}")
     print(f"Vaults: {len(vault_configs)}")
+    if dry_run:
+        print("DRY RUN - nothing will be written")
     print("=" * 50)
 
-    # Track staged vault paths for config generation
+    assert_safe_staging_target(staging_path)
+    if not dry_run:
+        claim_staging_directory(staging_path)
+
     staged_vaults = []
+    censuses = []
 
     for vault in vault_configs:
         source_path = Path(vault['path'])
@@ -116,33 +191,36 @@ def build_multi_vault(config):
         print(f"Processing vault: {vault_name}")
         print(f"{'─' * 50}")
 
-        # Each vault gets its own subdirectory in staging
         vault_staging = staging_path / vault_name
-        create_staging_directory(source_path, vault_staging)
+        census, changes = sync_vault(
+            source_path, vault_staging, allowed_extensions=allowed, dry_run=dry_run
+        )
+        print(render_changes(changes))
+        censuses.append((vault_name, census))
 
-        staged_vaults.append({
-            'name': vault_name,
-            'path': vault_staging,
-        })
+        staged_vaults.append({'name': vault_name, 'path': vault_staging})
 
-    # Copy top-level README from root directory into staging (if configured)
-    if 'root' in config:
-        root_path = Path(config['root'])
-        root_readme = find_homepage(root_path)
+    # Copy the top-level README from the root directory into staging
+    if 'root' in config and not dry_run:
+        root_readme = find_homepage(Path(config['root']))
         if root_readme:
-            dest = staging_path / root_readme.name
-            staging_path.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(root_readme, dest)
-            print(f"Copied top-level homepage: {root_readme.name}")
+            shutil.copy2(root_readme, staging_path / root_readme.name)
+            print(f"\nCopied top-level homepage: {root_readme.name}")
 
-    # Generate unified myst.yml at staging root
-    print(f"\n{'─' * 50}")
-    print("Generating unified myst.yml...")
-    print(f"{'─' * 50}")
-    generate_multi_vault_config(staged_vaults, staging_path)
+    if not dry_run:
+        print(f"\n{'─' * 50}")
+        print("Generating unified myst.yml...")
+        print(f"{'─' * 50}")
+        generate_multi_vault_config(staged_vaults, staging_path)
+
+    print(f"\n{'=' * 50}")
+    print("Extension census")
+    print(f"{'=' * 50}")
+    for vault_name, census in censuses:
+        print('\n'.join(census.render(vault_name)))
 
     print("\n" + "=" * 50)
-    print("Build preparation complete!")
+    print("Build complete!")
     print(f"Staging directory: {staging_path}")
     print("\nTo build and preview:")
     print(f"  cd {staging_path}")
@@ -152,12 +230,13 @@ def build_multi_vault(config):
     return staging_path
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(
         description='Preprocess Obsidian vaults for MyST',
         epilog='Examples:\n'
                '  python build_pipeline.py ../research_biology_la ../_build_staging\n'
-               '  python build_pipeline.py --config qbi_build.yml',
+               '  python build_pipeline.py --config qbi_build.yml\n'
+               '  python build_pipeline.py --config qbi_build.yml --dry-run',
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
@@ -167,17 +246,27 @@ if __name__ == "__main__":
                         help='Output staging directory (single vault mode)')
     parser.add_argument('--config', '-c', type=str, default=None,
                         help='Path to build config YAML (multi vault mode)')
+    parser.add_argument('--dry-run', '-n', action='store_true',
+                        help='Report what would change without writing anything')
 
     args = parser.parse_args()
 
-    if args.config:
-        # Multi vault mode
-        config = load_build_config(args.config)
-        build_multi_vault(config)
-    elif args.source and args.output:
-        # Single vault mode (backwards compatible)
-        build_single_vault(args.source, args.output)
-    else:
-        parser.print_help()
-        print("\nError: Provide either --config or both source and output paths")
-        sys.exit(1)
+    try:
+        if args.config:
+            build_multi_vault(load_build_config(args.config), dry_run=args.dry_run)
+        elif args.source and args.output:
+            validate_output_path(args.output, [args.source])
+            build_single_vault(args.source, args.output, dry_run=args.dry_run)
+        else:
+            parser.print_help()
+            print("\nError: Provide either --config or both source and output paths")
+            return 1
+    except ValueError as e:
+        print(f"\nError: {e}")
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

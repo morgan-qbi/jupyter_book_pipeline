@@ -58,6 +58,51 @@ WEB_IMAGE_EXTENSIONS = frozenset({
 # renderable set.
 IMAGE_EXTENSIONS = WEB_IMAGE_EXTENSIONS | frozenset({'.tiff', '.tif'})
 
+# ---------------------------------------------------------------------------
+# Publication allow-list
+# ---------------------------------------------------------------------------
+# The output of this pipeline is a public website, so file types are published
+# by permission rather than by omission: anything not named here is skipped and
+# reported, instead of being copied because nobody thought to forbid it.
+#
+# The default is deliberately conservative. Research vaults accumulate
+# spreadsheets, exports and scratch files that nobody intends to publish, and
+# the failure mode of a deny-list is silent disclosure. The failure mode of an
+# allow-list is a missing file, which the extension census makes obvious on the
+# very next build -- and extra types can be opted in via `publish_extensions`
+# in the build config, without touching code.
+PUBLISHABLE_EXTENSIONS = frozenset({
+    # Pages
+    '.md', '.ipynb',
+    # Inline images
+    *WEB_IMAGE_EXTENSIONS,
+    # Documents and scientific artifacts offered as download links
+    '.pdf', '.stl', '.obj', '.ino', '.py',
+})
+
+# Files the pipeline writes into staging, or that are placed there by hand as
+# site chrome. Never treated as stale, never pruned during a sync.
+PRESERVED_STAGING_NAMES = frozenset({
+    '.git', '.gitignore', '_static', 'myst.yml', '.qbi-staging',
+    '.qbi-manifest.json',
+})
+
+# Written into a staging directory to mark it as owned by this pipeline.
+# Sync refuses to prune a non-empty directory that lacks it, so pointing
+# `output` at a real data directory cannot quietly delete its contents.
+STAGING_MARKER = '.qbi-staging'
+
+
+def is_publishable_extension(suffix, allowed=None):
+    """True if a file extension may be copied into staging"""
+    allowed = PUBLISHABLE_EXTENSIONS if allowed is None else allowed
+    return suffix.lower() in allowed
+
+
+def is_preserved_staging_name(name):
+    """True if a top-level staging entry must never be pruned as stale"""
+    return name in PRESERVED_STAGING_NAMES
+
 
 def is_confidential_name(name):
     """True if a path component uses the confidential folder convention"""
@@ -103,9 +148,9 @@ def _prune(dirnames):
     dirnames[:] = sorted(d for d in dirnames if not is_excluded_name(d))
 
 
-def iter_vault_files(root):
+def iter_vault_files(root, stats=None):
     """
-    Walk a vault, yielding (absolute_path, relative_path) for publishable files.
+    Walk a vault, yielding (absolute_path, relative_path) for traversable files.
 
     Excluded subtrees are pruned during traversal rather than filtered after
     the fact, so a directory carrying a .qbi-exclude marker -- or matching any
@@ -114,18 +159,34 @@ def iter_vault_files(root):
     os.walk does not follow directory symlinks, so a linked directory cannot
     pull outside content into the vault. Symlinked *files* are still yielded;
     rejecting those is a separate concern handled at the staging layer.
+
+    Yields everything policy allows to be *traversed*, which is deliberately
+    wider than what may be *published* -- the index needs to know a file exists
+    in order to warn that a page references something the allow-list skipped.
+
+    `stats`, if given, is a dict updated with counts of what was pruned.
+    Excluded subtrees are counted but never descended into, so their contents
+    are reported as a directory count only and never by name.
     """
     root = Path(root)
     for dirpath, dirnames, filenames in os.walk(root):
         if QBI_EXCLUDE_MARKER in filenames:
+            if stats is not None:
+                stats['marked_dirs'] = stats.get('marked_dirs', 0) + 1
             dirnames[:] = []
             continue
 
+        before = len(dirnames)
         _prune(dirnames)
+        if stats is not None and before != len(dirnames):
+            stats['excluded_dirs'] = stats.get('excluded_dirs', 0) + (before - len(dirnames))
+
         current = Path(dirpath)
 
         for filename in sorted(filenames):
             if is_excluded_name(filename):
+                if stats is not None:
+                    stats['excluded_files'] = stats.get('excluded_files', 0) + 1
                 continue
             absolute = current / filename
             yield absolute, absolute.relative_to(root)

@@ -142,10 +142,37 @@ def test_site_config_shape():
     assert config["site"]["template"] == "book-theme"
 
 
-def test_project_id_is_regenerated_on_every_call():
-    """KNOWN-WRONG (S-11): a fresh uuid4 per build means the site's identity
-    changes every run, which will break DOI/metadata work."""
-    assert build_site_config([])["project"]["id"] != build_site_config([])["project"]["id"]
+def test_project_id_is_stable_across_builds():
+    """S-11 regression guard: a fresh uuid4 per build meant the site's identity
+    changed every run, which would break DOI and metadata work."""
+    assert build_site_config([])["project"]["id"] == build_site_config([])["project"]["id"]
+
+
+def test_project_id_differs_between_sites():
+    a = build_site_config([], site_title="Site A")["project"]["id"]
+    b = build_site_config([], site_title="Site B")["project"]["id"]
+    assert a != b
+
+
+def test_existing_project_id_is_preserved(tmp_path):
+    """An id already published wins over the derived one, so identity survives
+    even a site rename."""
+    existing = tmp_path / "myst.yml"
+    existing.write_text(
+        "version: 1\nproject:\n  id: 11111111-2222-3333-4444-555555555555\n",
+        encoding="utf-8",
+    )
+
+    config = build_site_config([], site_title="Renamed", existing_config_path=existing)
+    assert config["project"]["id"] == "11111111-2222-3333-4444-555555555555"
+
+
+def test_malformed_existing_config_falls_back_to_derived_id(tmp_path):
+    existing = tmp_path / "myst.yml"
+    existing.write_text("{{ not: valid: yaml", encoding="utf-8")
+
+    config = build_site_config([], site_title="X", existing_config_path=existing)
+    assert config["project"]["id"] == build_site_config([], site_title="X")["project"]["id"]
 
 
 def test_dark_logo_intentionally_reuses_the_single_available_asset():
