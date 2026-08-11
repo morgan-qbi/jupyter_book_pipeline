@@ -16,7 +16,7 @@ from .frontmatter import (
     inject_frontmatter,
 )
 from .images import MAX_IMAGE_WIDTH, convert_image, optimize_image, strip_exif
-from .links import convert_obsidian_links, rewrite_absolute_paths
+from .links import convert_obsidian_links, convert_wikilinks, rewrite_absolute_paths
 from .paths import (
     normalize_all_paths,
     normalize_markdown_link_urls,
@@ -28,6 +28,7 @@ __all__ = [
     'MAX_IMAGE_WIDTH',
     'convert_image',
     'convert_obsidian_links',
+    'convert_wikilinks',
     'ensure_image_linebreaks',
     'find_frontmatter',
     'fix_text_issues',
@@ -53,6 +54,7 @@ def process_markdown_content(content, current_file, file_index, path_set, unpubl
     content = ensure_image_linebreaks(content)    # Phase 0b - ensure block images
     content = normalize_all_paths(content)         # Phase 1
     content = convert_obsidian_links(content, current_file, file_index, path_set, unpublished)  # Phase 2
-    content = rewrite_absolute_paths(content, current_file, path_set, file_index)  # Phase 2b
+    content = convert_wikilinks(content, current_file, file_index, path_set)  # Phase 2b
+    content = rewrite_absolute_paths(content, current_file, path_set, file_index)  # Phase 2c
     content = fix_text_issues(content)             # Phase 3
     return content

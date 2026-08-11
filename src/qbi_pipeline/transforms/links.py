@@ -102,6 +102,98 @@ def convert_obsidian_links(content, current_file, file_index, path_set, unpublis
     return re.sub(pattern, replacement, content)
 
 
+def slugify_heading(heading):
+    """
+    Convert a heading to the anchor MyST generates for it.
+
+    Verified against mystmd 1.6.4 rather than guessed: punctuation is dropped,
+    whitespace and underscores collapse to hyphens, and a slug that would begin
+    with a digit is prefixed with `id-`, since a bare numeric HTML identifier
+    is not valid. Numbered headings are the norm in lab protocols, so getting
+    that prefix wrong breaks most of the anchors that matter.
+
+        "## 1. What the instrument does" -> id-1-what-the-instrument-does
+        "## Start-up"                    -> start-up
+    """
+    slug = re.sub(r'[^\w\s-]', '', heading.strip().lower())
+    slug = re.sub(r'[\s_]+', '-', slug)
+    # A literal hyphen surrounded by spaces would otherwise leave a run of
+    # three, e.g. "Step 2 - Degauss" -> step-2---degauss.
+    slug = re.sub(r'-+', '-', slug).strip('-')
+
+    if slug and slug[0].isdigit():
+        slug = f'id-{slug}'
+    return slug
+
+
+def convert_wikilinks(content, current_file, file_index, path_set):
+    """
+    Convert Obsidian `[[Page]]` links into markdown links between pages.
+
+    These are links, not embeds -- `[[Build Guide]]` rather than
+    `![[plot.png]]` -- and they were previously left untouched, so they
+    rendered as literal double-bracketed text on the published site.
+
+    Handles the three forms Obsidian writes:
+
+        [[Page]]                -> [Page](Page.md)
+        [[Page|shown text]]     -> [shown text](Page.md)
+        [[Page#Some Heading]]   -> [Page > Some Heading](Page.md#some-heading)
+
+    A page is named without its extension, so the lookup retries with `.md`
+    before giving up.
+    """
+    # (?<!!) so image embeds, handled by convert_obsidian_links, are not eaten.
+    pattern = r'(?<!!)\[\[([^\]\n]+)\]\]'
+
+    def resolve(target):
+        """Return the staged path for a wikilink target, or None."""
+        if '/' in target or '\\' in target:
+            candidate = staged_relative_path(target)
+            for option in (candidate, f'{candidate}.md'):
+                if option in path_set:
+                    return option
+            return None
+
+        name = sanitize_filename(target)
+        for option in (name, f'{name}.md'):
+            found = file_index.get(option)
+            if isinstance(found, list):
+                print(
+                    f"Warning: {current_file} links to '{target}', and several "
+                    f"files share that name; using {found[0]}"
+                )
+                found = found[0]
+            if found:
+                return found
+        return None
+
+    def replacement(match):
+        raw = match.group(1)
+        target, _, alias = raw.partition('|')
+        target, _, heading = target.partition('#')
+        target, alias, heading = target.strip(), alias.strip(), heading.strip()
+
+        if not target:
+            # `[[#Heading]]` is a link within the same page.
+            if heading:
+                return f'[{alias or heading}](#{slugify_heading(heading)})'
+            return match.group(0)
+
+        resolved = resolve(target)
+        if not resolved:
+            print(f"Warning: {current_file} links to a page that was not found: {target}")
+            return match.group(0)
+
+        text = alias or (f'{target} > {heading}' if heading else target)
+        url = get_relative_path(current_file, resolved)
+        if heading:
+            url = f'{url}#{slugify_heading(heading)}'
+        return f'[{text}]({url})'
+
+    return re.sub(pattern, replacement, content)
+
+
 def rewrite_absolute_paths(content, current_file, path_set, file_index=None):
     """
     Resolve standard markdown image links against the vault.

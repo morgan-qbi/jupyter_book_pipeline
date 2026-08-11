@@ -4,7 +4,14 @@ This is the most regex-heavy part of the pipeline and the part most likely to
 shift during the refactor, so it gets the densest coverage.
 """
 
-from qbi_pipeline.transforms import convert_obsidian_links, rewrite_absolute_paths
+import pytest
+
+from qbi_pipeline.transforms import (
+    convert_obsidian_links,
+    convert_wikilinks,
+    rewrite_absolute_paths,
+)
+from qbi_pipeline.transforms.links import slugify_heading
 
 INDEX = {
     "chart.png": "1_eln/chart.png",
@@ -181,3 +188,82 @@ def test_anchors_and_mailto_are_untouched():
     for url in ("#results", "mailto:ada@qbi.org", "//cdn.example.org/x.js"):
         src = f"[x]({url})"
         assert rewrite_absolute_paths(src, "n.md", set(), {}) == src
+
+
+# =============================================================================
+# Page-to-page wikilinks
+# =============================================================================
+
+PAGES = {
+    "Build_Guide.md": "1_eln/Build_Guide.md",
+    "README_GUI.md": "3_code/README_GUI.md",
+    "dup.md": ["a/dup.md", "b/dup.md"],
+}
+PAGE_PATHS = {"1_eln/Build_Guide.md", "3_code/README_GUI.md", "a/dup.md", "b/dup.md"}
+
+
+def wiki(content, current="1_eln/User_Manual.md"):
+    return convert_wikilinks(content, current, PAGES, PAGE_PATHS)
+
+
+def test_bare_wikilink_becomes_a_page_link():
+    """These rendered as literal [[double brackets]] on the published site."""
+    assert wiki("see [[Build Guide]]") == "see [Build Guide](Build_Guide.md)"
+
+
+def test_wikilink_resolves_across_folders():
+    """Link text is the target as written, which is what Obsidian displays."""
+    assert wiki("see [[README_GUI]]") == "see [README_GUI](../3_code/README_GUI.md)"
+
+
+def test_wikilink_alias_is_used_as_link_text():
+    assert wiki("see [[Build Guide|the build guide]]") == "see [the build guide](Build_Guide.md)"
+
+
+def test_wikilink_to_a_heading_gets_an_anchor():
+    out = wiki("see [[Build Guide#Optical Path]]")
+    assert out == "see [Build Guide > Optical Path](Build_Guide.md#optical-path)"
+
+
+def test_wikilink_alias_wins_over_the_heading_label():
+    out = wiki("see [[Build Guide#Optical Path|optics]]")
+    assert out == "see [optics](Build_Guide.md#optical-path)"
+
+
+def test_same_page_heading_link():
+    assert wiki("see [[#Setup Steps]]") == "see [Setup Steps](#setup-steps)"
+
+
+@pytest.mark.parametrize("heading,anchor", [
+    ("Setup Steps", "setup-steps"),
+    ("Start-up", "start-up"),
+    ("1. What the instrument does", "id-1-what-the-instrument-does"),
+    ("4. Step 1 — Check the magnetometer", "id-4-step-1-check-the-magnetometer"),
+    ("5. Step 2 - Degauss the shield (monthly)", "id-5-step-2-degauss-the-shield-monthly"),
+])
+def test_heading_slugs_match_myst(heading, anchor):
+    """Verified against mystmd 1.6.4. Numbered headings are the norm in lab
+    protocols, and MyST prefixes those ids with `id-` because a bare numeric
+    HTML identifier is invalid -- getting it wrong breaks most anchors."""
+    assert slugify_heading(heading) == anchor
+
+
+def test_explicit_path_wikilink():
+    assert wiki("see [[3_code/README_GUI.md]]") == "see [3_code/README_GUI.md](../3_code/README_GUI.md)"
+
+
+def test_unresolvable_wikilink_is_left_as_written():
+    """Visible on the page beats silently vanishing."""
+    assert wiki("see [[No Such Page]]") == "see [[No Such Page]]"
+
+
+def test_image_embeds_are_not_treated_as_page_links():
+    """convert_obsidian_links owns `![[...]]`; this must not eat it."""
+    src = "![[plot.png]]"
+    assert wiki(src) == src
+
+
+def test_ambiguous_wikilink_uses_the_first_and_warns(capsys):
+    out = wiki("see [[dup]]")
+    assert out == "see [dup](../a/dup.md)"
+    assert "several" in capsys.readouterr().out

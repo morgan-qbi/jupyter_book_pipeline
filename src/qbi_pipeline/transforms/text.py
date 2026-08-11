@@ -57,6 +57,41 @@ def _split_inline_images(text):
     return '\n'.join(lines)
 
 
+def _is_image_only_line(line):
+    """True if a line contains nothing but an image"""
+    stripped = line.strip()
+    # `[![badge](i)](href)` starts with '[!' and is a link, not a bare image.
+    return stripped.startswith('![') and stripped.endswith((')', ']]'))
+
+
+def _separate_block_images(text):
+    """
+    Put a blank line after an image that sits on its own line.
+
+    A blank line *before* is not enough. Markdown's lazy continuation folds a
+    following line of text into the same paragraph, so
+
+        ![](plot.png)
+        Make sure the magnetometer is oriented consistently.
+
+    is one paragraph containing an image, and MyST renders it as a thumbnail in
+    the flow of that text. This is the shape Obsidian produces for an image
+    inside a list item.
+    """
+    lines = text.split('\n')
+    out = []
+
+    for i, line in enumerate(lines):
+        out.append(line)
+        if not _is_image_only_line(line):
+            continue
+        following = lines[i + 1] if i + 1 < len(lines) else ''
+        if following.strip():
+            out.append('')
+
+    return '\n'.join(out)
+
+
 def ensure_image_linebreaks(content):
     """Ensure images render as blocks, not inline"""
     # Code blocks are left alone: an example that shows markdown syntax should
@@ -68,6 +103,9 @@ def ensure_image_linebreaks(content):
     # preceding paragraph.
     content = re.sub(r'(?<!\n)\n([ \t]*\!\[\[)', r'\n\n\1', content)
     content = re.sub(r'(?<!\n)\n([ \t]*!\[)', r'\n\n\1', content)
+
+    # ...and a blank line after, or the *following* line joins the paragraph.
+    content = apply_outside_code(content, _separate_block_images)
     return content
 
 

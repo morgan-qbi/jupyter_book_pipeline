@@ -177,3 +177,27 @@ def test_does_not_touch_images_inside_code_blocks():
 def test_multiple_images_on_one_line_each_get_their_own():
     out = ensure_image_linebreaks("A ![](x.png) B ![](y.png)")
     assert out == "A\n\n![](x.png) B\n\n![](y.png)"
+
+
+def test_blank_line_added_after_a_block_image():
+    """A blank line before is not enough. Markdown lazy continuation folds the
+    next line into the same paragraph, so the image renders as a thumbnail in
+    the flow of that text -- the shape Obsidian produces inside list items."""
+    src = "  ![](plot.png)\n  Make sure the orientation is consistent.\n"
+    out = ensure_image_linebreaks(src)
+    assert out == "  ![](plot.png)\n\n  Make sure the orientation is consistent.\n"
+
+
+def test_no_extra_blank_line_when_one_already_follows():
+    src = "![](plot.png)\n\nNext paragraph.\n"
+    assert ensure_image_linebreaks(src) == src
+
+
+def test_blank_line_after_a_wikilink_embed_too():
+    out = ensure_image_linebreaks("![[plot.png]]\nCaption text\n")
+    assert out == "![[plot.png]]\n\nCaption text\n"
+
+
+def test_badge_link_line_does_not_get_a_blank_line_after():
+    src = "[![badge](b.svg)](https://ci.example.org)\nBuild status above.\n"
+    assert ensure_image_linebreaks(src) == src
