@@ -52,3 +52,6 @@ audit_reports/
 # Local interpreter selection is machine-specific: this checkout uses .venv on
 # Windows, the server uses venv/ on Linux. Not shared.
 .vscode/
+
+# Local test config for eyeballing output with `myst start`.
+/local_test_config.yml
