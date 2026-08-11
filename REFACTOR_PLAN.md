@@ -93,7 +93,7 @@ The title was spliced in at a hardcoded offset of 3, colliding with the opening 
 
 Rewritten around three helpers: `find_frontmatter` (recognizes a block only when the first line is a bare `---` and a later line is a bare `---` or `...`, and returns the true splice offset); `has_title` (parses with `yaml.safe_load` rather than substring-matching `'title:'`, which previously matched `subtitle:`); and `format_title_line` (delegates quoting to `yaml.safe_dump`, so colons, apostrophes and both together round-trip). Unterminated `---` blocks get a fresh block prepended rather than being left titleless. CRLF preserved.
 
-**S-15 — URL sanitizing is applied to external links.** — ⬜ **OPEN**
+**S-15 — URL sanitizing is applied to external links.** — ✅ **FIXED**
 `normalize_markdown_link_urls` rewrites every link target, including remote ones, so `https://example.org/my%20paper.pdf` becomes `.../my_paper.pdf` and the link 404s. It should skip `http`/`https`/`data:` the way `rewrite_absolute_paths` already does. Small fix, locked by a characterization test that currently asserts the broken behavior.
 
 **S-16 — The TOC layer has no confidential-folder defense of its own.** — ✅ **FIXED** (Phase 1)
@@ -118,6 +118,13 @@ No browser renders TIFF inline, so microscopy images were either skipped or emit
 The conversion renames the file, and that rename has to reach every place a link is resolved — Obsidian embeds carry a bare filename with no path, so the rename is applied when the vault is **indexed**, not when files are copied. `build_file_index` therefore keys on the vault name (`scan.tif`) and stores the staged path (`scan.png`).
 
 16-bit and float TIFFs are rescaled to 8-bit for display, which is lossy in the measurement sense: it maps the image's own min..max onto 0..255. Fine to look at, **not** to read quantitatively. The original stays in the vault untouched. Multi-page TIFFs keep the first frame, with a note in the build log.
+
+**S-21 — Sync deleted MyST's build directory.** — ✅ **FIXED**
+Pruning removed everything under the staging root that did not correspond to a vault file, including `_build/` -- MyST's build cache, its rendered site, and the theme's `node_modules`. On the server, `myst start` runs as a systemd service holding those open, so every scheduled build would have deleted them underneath the live process.
+
+Anything at the staging root beginning with `_` or `.` is now preserved on principle: `EXCLUDED_PREFIXES` forbids those from vault content, so nothing the pipeline stages can ever start with them, and anything in staging that does belongs to something else. That covers `_build`, `_static`, `.git`, and whatever a future MyST version invents.
+
+Found while preparing the deployment, not by the test suite -- the staging fixtures had no reason to contain a `_build`.
 
 ### ✅ Cleared
 
@@ -285,8 +292,48 @@ Two genuine vault-content problems, which `qbi audit` reports:
 - one link written relative to the project root rather than the page
   (`3_code_bacterioscope/Operation_test/systematic_calibration.ipynb`)
 
-### Still open
+### Resolved since
 
-Non-image markdown links (`[text](path)`) do not get the S-19 search fallback —
-only images do. The one broken `.ipynb` link above would be fixed by extending
-it.
+Non-image links now get the same resolution as images, so the broken `.ipynb`
+link is fixed. The allow-list gained video, bioinformatics and tabular formats.
+After all of it: **228 image references, 0 broken**; one broken link remains, to
+a `LICENSE` file with no extension.
+
+**Video was settled empirically against mystmd 1.6.4**, not assumed:
+`![](clip.mp4)` renders as `<video>`, while `.mov` and `.webm` fall through to a
+broken `<img>`. Only `.mp4` is emitted inline; the others publish as download
+links. Remuxing `.mov` to `.mp4` would be lossless for iPhone footage but needs
+ffmpeg as a system dependency.
+
+**Note on `.csv`:** now published by default, because the vault links to
+phylogenetic data as CSV. That does mean a spreadsheet dropped in a vault
+reaches the site. The `5_*` convention and `.qbi-exclude` are the controls.
+
+
+---
+
+## 8. Remaining
+
+**Structured logging (S-12, remainder).** Output is still `print`-based: no
+levels, no timestamps, no `--verbose`. Deprioritized rather than forgotten —
+under systemd, journald already timestamps stdout and `journalctl -u
+qbi-build` gives per-run history, which covers most of what logging would have
+bought. Worth doing if the pipeline ever needs to be consumed by anything other
+than a human reading a terminal.
+
+**S-1 remainder.** The naming rule is still fail-open: a folder called
+`Confidential` publishes unless it carries a `.qbi-exclude`. Closing it needs
+D-2 option 3, content scanning, still deferred.
+
+**Ideas raised, not started.** Each is a project rather than a fix:
+
+- *Inline STL viewer.* MyST renders `.stl` as a broken `<img>`, so they publish
+  as downloads today. A viewer means injecting a JS component
+  (`<model-viewer>` or three.js) into the built site.
+- *Rendering `.dna` / `.aln` in the browser.* No standard exists. There are JS
+  libraries (seqviz for plasmid maps, MSA viewers for alignments) but nothing
+  MyST supports natively, so this is custom work.
+- *OCR for handwritten lab notes.* Worth knowing that classical OCR
+  (Tesseract) is poor at handwriting; this needs handwriting recognition — a
+  vision model or a specialist HTR service — and a human review step, since a
+  wrong transcription of a lab notebook is worse than none.
