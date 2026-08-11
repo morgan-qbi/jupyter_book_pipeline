@@ -7,6 +7,7 @@ from pathlib import Path
 
 from ..policy import EXCLUDED_DIRS, IMAGE_EXTENSIONS
 from .checks import (
+    check_broken_anchors,
     check_broken_references,
     check_empty_files,
     check_generic_filenames,
@@ -41,6 +42,7 @@ def generate_report(vault_path, vault_name=None):
     # Run all checks
     checks = [
         ("Broken References", check_broken_references(files, vault_path)),
+        ("Links to Missing Headings", check_broken_anchors(files, vault_path)),
         ("Pasted/Screenshot Images to Rename", check_pasted_images(files, vault_path)),
         ("Generic Filenames", check_generic_filenames(files, vault_path)),
         ("Empty Files", check_empty_files(files, vault_path)),

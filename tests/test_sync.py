@@ -238,6 +238,41 @@ def test_optimized_image_is_not_recopied_on_every_build(tmp_path, staging):
     assert second["unchanged"] == 2
 
 
+def test_two_names_that_sanitize_alike_do_not_fight_over_one_staged_file(tmp_path, staging, capsys):
+    """`to order.dna` and `to_order.dna` both sanitize to `to_order.dna`.
+
+    Both were being written to that one path, each overwriting the other, so
+    the published file was whichever came last and every single build reported
+    them as changed -- which would have put a spurious commit in the staging
+    repo every night forever.
+    """
+    v = tmp_path / "vault"
+    write(v / "reference to order.dna", "spaced\n")
+    write(v / "reference_to_order.dna", "underscored\n")
+
+    _, first = sync_vault(v, staging)
+    assert first["skipped_collision"] == 1
+    assert "both stage as" in capsys.readouterr().out
+
+    _, second = sync_vault(v, staging)
+    assert second["updated"] == 0
+    assert second["unchanged"] == 1
+
+
+def test_collision_keeps_the_same_file_every_run(tmp_path, staging):
+    """Which one wins must not depend on the order the filesystem returns."""
+    v = tmp_path / "vault"
+    write(v / "reference to order.dna", "spaced\n")
+    write(v / "reference_to_order.dna", "underscored\n")
+
+    sync_vault(v, staging)
+    staged = (staging / "reference_to_order.dna").read_text(encoding="utf-8")
+
+    for _ in range(3):
+        sync_vault(v, staging)
+        assert (staging / "reference_to_order.dna").read_text(encoding="utf-8") == staged
+
+
 def test_edited_image_is_reprocessed(tmp_path, staging):
     from PIL import Image
 

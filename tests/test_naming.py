@@ -39,13 +39,54 @@ def test_sanitize_path_normalizes_separators_and_spaces(raw, expected):
 # =============================================================================
 
 @pytest.mark.parametrize("raw,expected", [
-    ("1_eln", "Eln"),
+    ("1_eln", "ELN"),
     ("my_folder", "My Folder"),
     ("2_curated_datasets", "Curated Datasets"),
     ("2025", "2025"),                                # was "" in preprocessing
     ("research-biology-la", "Research Biology La"),  # was "Research-Biology-La"
 ])
 def test_prettify_folder_name(raw, expected):
+    assert naming.prettify_folder_name(raw) == expected
+
+
+# =============================================================================
+# Case is meaning: names the scientists already spelled correctly
+# =============================================================================
+
+@pytest.mark.parametrize("raw,expected", [
+    # `str.title()` lowercased the rest of every word, so every acronym the
+    # lab writes in caps came out looking like an ordinary word.
+    ("NI_DAQ_testing", "NI DAQ Testing"),
+    ("LOV_domain_phylogenetics", "LOV Domain Phylogenetics"),
+    ("LED_control", "LED Control"),
+    ("HsuLOV", "HsuLOV"),
+    ("LIS3MDL_comms", "LIS3MDL Comms"),
+    # Lowercase-first is a convention, not a mistake: pRSET is a plasmid,
+    # phrB a gene, and 0p5mT a field strength of 0.5 mT. "P5Mt" is nonsense.
+    ("pRSETb-phrB_Gibson_test", "pRSETb phrB Gibson Test"),
+    ("0p5mT", "0p5mT"),
+    ("NDTiffStack_measurements", "NDTiffStack Measurements"),
+    # An all-lowercase word has no capitals to preserve, so it goes through
+    # the acronym table.
+    ("mfe_fit_analysis", "MFE Fit Analysis"),
+    ("eln_archive", "ELN Archive"),
+    # `title()` also broke apostrophes: "Morgan'S Notes".
+    ("Morgan's_notes", "Morgan's Notes"),
+])
+def test_existing_capitalization_is_preserved(raw, expected):
+    assert naming.prettify_folder_name(raw) == expected
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ("1_eln", "ELN"),                  # an ordering prefix is dropped
+    ("01_basic_tutorial", "Basic Tutorial"),
+    ("4state_kBET", "4state kBET"),    # no underscore: the 4 is the model
+    ("20250918_rampdown", "20250918 Rampdown"),   # a date, not an ordering prefix
+    ("2025", "2025"),
+])
+def test_only_a_short_numeric_prefix_is_stripped(raw, expected):
+    """A greedy strip ate dates too, and a folder of entries distinguished only
+    by date collapses into one repeated nav title."""
     assert naming.prettify_folder_name(raw) == expected
 
 
@@ -80,3 +121,9 @@ def test_display_name_prefers_override_table():
 
 def test_display_name_falls_through_to_prettify():
     assert config_generator.get_display_name("some_new_vault") == "Some New Vault"
+
+
+def test_acronym_table_is_lowercase_keyed():
+    """Lookup is on an all-lowercase word, so a capitalized key would be dead
+    weight that silently never matches."""
+    assert all(key == key.lower() for key in naming.ACRONYMS)

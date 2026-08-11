@@ -11,6 +11,7 @@ from pathlib import Path
 
 from ..naming import get_relative_path, sanitize_filename, staged_relative_path
 from ..policy import INLINE_EXTENSIONS
+from .text import apply_outside_code
 
 
 def convert_obsidian_links(content, current_file, file_index, path_set, unpublished=None):
@@ -142,6 +143,11 @@ def convert_wikilinks(content, current_file, file_index, path_set):
 
     A page is named without its extension, so the lookup retries with `.md`
     before giving up.
+
+    Code is left alone. `df[['time', 'signal']]` is pandas indexing, not a
+    wikilink, and this lab writes a lot of pandas -- a vault with a `time.md`
+    page in it would otherwise have its published code silently rewritten into
+    a markdown link.
     """
     # (?<!!) so image embeds, handled by convert_obsidian_links, are not eaten.
     pattern = r'(?<!!)\[\[([^\]\n]+)\]\]'
@@ -191,7 +197,7 @@ def convert_wikilinks(content, current_file, file_index, path_set):
             url = f'{url}#{slugify_heading(heading)}'
         return f'[{text}]({url})'
 
-    return re.sub(pattern, replacement, content)
+    return apply_outside_code(content, lambda prose: re.sub(pattern, replacement, prose))
 
 
 def rewrite_absolute_paths(content, current_file, path_set, file_index=None):

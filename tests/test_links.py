@@ -263,6 +263,27 @@ def test_image_embeds_are_not_treated_as_page_links():
     assert wiki(src) == src
 
 
+def test_pandas_indexing_in_a_code_block_is_not_a_wikilink():
+    """`df[['a', 'b']]` is column selection. This lab writes a lot of pandas,
+    and a vault with a matching page name would have had its published code
+    silently rewritten into a link."""
+    index = {"dup.md": "a/dup.md"}
+    src = "```python\ndf[['dup']]\n```\n"
+    assert convert_wikilinks(src, "n.md", index, {"a/dup.md"}) == src
+
+
+def test_pandas_indexing_in_an_inline_code_span_is_left_alone():
+    index = {"dup.md": "a/dup.md"}
+    src = "use `df[['dup']]` for that\n"
+    assert convert_wikilinks(src, "n.md", index, {"a/dup.md"}) == src
+
+
+def test_a_wikilink_after_a_code_block_still_converts():
+    """Skipping code must not skip the rest of the document."""
+    out = wiki("```python\nx = 1\n```\n\nsee [[Build Guide]]\n")
+    assert "[Build Guide](Build_Guide.md)" in out
+
+
 def test_ambiguous_wikilink_uses_the_first_and_warns(capsys):
     out = wiki("see [[dup]]")
     assert out == "see [dup](../a/dup.md)"

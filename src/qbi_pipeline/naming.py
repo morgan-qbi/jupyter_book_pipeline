@@ -13,6 +13,7 @@ caller now uses it.
 """
 
 import os
+import re
 from pathlib import Path
 
 # Display-name overrides for vault and project folder names.
@@ -27,6 +28,30 @@ DISPLAY_NAMES = {
     'research-physics-la': 'Research: Physics LA',
     'research-physics-theory': 'Research: Physics Theory',
 }
+
+# Terms that are written lowercase on disk but are not lowercase words.
+#
+# Capitalization already present in a folder or file name is preserved, so this
+# table is only needed for names people typed in lowercase: `mfe_fit_analysis`
+# has nothing to preserve, while `NI_DAQ_testing` and `HsuLOV` do. Add entries
+# here as new instruments and constructs turn up.
+ACRONYMS = {
+    'ac': 'AC', 'adc': 'ADC', 'afm': 'AFM', 'api': 'API', 'csv': 'CSV',
+    'dac': 'DAC', 'daq': 'DAQ', 'dc': 'DC', 'dna': 'DNA', 'eln': 'ELN',
+    'epr': 'EPR', 'esr': 'ESR', 'fad': 'FAD', 'fmn': 'FMN', 'gui': 'GUI',
+    'hplc': 'HPLC', 'ir': 'IR', 'kbet': 'kBET', 'led': 'LED', 'lov': 'LOV',
+    'mfe': 'MFE', 'ni': 'NI', 'nmr': 'NMR', 'odmr': 'ODMR', 'pcr': 'PCR',
+    'ph': 'pH', 'pid': 'PID', 'qbi': 'QBI', 'rf': 'RF', 'rna': 'RNA',
+    'sem': 'SEM', 'stl': 'STL', 'tem': 'TEM', 'ttl': 'TTL', 'usb': 'USB',
+    'uv': 'UV',
+}
+
+# An ordering prefix: one or two digits and an underscore, as in `1_eln` or
+# `01_basic_tutorial`. Capped at two digits on purpose -- a greedy strip also
+# ate the date off `20250918_maglov2_rampdown.md`, and a folder of entries
+# distinguished only by date collapses to one repeated title. It also leaves
+# the model count on `4state_kBET`, which has no underscore after the digit.
+ORDERING_PREFIX = re.compile(r'^\d{1,2}_')
 
 
 def sanitize_filename(filename):
@@ -75,15 +100,46 @@ def get_relative_path(from_file, to_file):
         return str(to_file).replace('\\', '/')
 
 
+def capitalize_word(word):
+    """
+    Capitalize a word, unless it is already telling us how it wants to be cased.
+
+    A word carrying any capital is left exactly as written. In this field the
+    case is the meaning: `pRSETb` and `phrB` are lowercase-first by convention,
+    `0p5mT` is a field strength of 0.5 mT, and `NDTiffStack` and `MagLOV2` are
+    product and construct names. Capitalizing the first letter of those is as
+    wrong as `str.title()` lowercasing the rest.
+
+    Only an all-lowercase word has nothing to preserve, and that is the one
+    the ACRONYMS table exists for.
+    """
+    if not word or any(character.isupper() for character in word):
+        return word
+    if word in ACRONYMS:
+        return ACRONYMS[word]
+    if not word[0].isalpha():
+        # `4state`, `2025` -- a leading digit is not something to capitalize.
+        return word
+    return word[0].upper() + word[1:]
+
+
 def prettify_folder_name(folder_name):
-    """Convert a folder name to Title Case with spaces"""
-    name = folder_name.lstrip('0123456789_')
+    """
+    Convert a folder or file name to a display title.
+
+    Existing capitalization is preserved: `NI_DAQ_testing` is what someone
+    meant to write, and `str.title()` turned it into `Ni Daq Testing`, along
+    with `LOV_domain_phylogenetics` -> `Lov Domain...` and `HsuLOV` -> `Hsulov`.
+    It also mangled apostrophes, so `Morgan's_notes` became `Morgan'S Notes`.
+    Names typed in lowercase have no capitals to preserve, so those go through
+    the ACRONYMS table.
+    """
+    name = ORDERING_PREFIX.sub('', folder_name, count=1)
     if not name:
-        # Name is only digits and underscores (e.g. "2025"); keep it as-is
-        # rather than returning an empty string.
         return folder_name
-    name = name.replace('_', ' ').replace('-', ' ')
-    return name.title()
+
+    words = name.replace('_', ' ').replace('-', ' ').split(' ')
+    return ' '.join(capitalize_word(word) for word in words)
 
 
 def get_display_name(folder_name):

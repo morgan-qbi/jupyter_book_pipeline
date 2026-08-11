@@ -236,6 +236,10 @@ def iter_vault_files(root, stats=None):
 
         before = len(dirnames)
         _prune(dirnames)
+        # Sorted so traversal order is the same on every machine and every run:
+        # when two vault names collide after sanitizing, which one wins must not
+        # depend on the order the filesystem happened to hand them back.
+        dirnames[:] = sorted(dirnames)
         if stats is not None and before != len(dirnames):
             stats['excluded_dirs'] = stats.get('excluded_dirs', 0) + (before - len(dirnames))
 

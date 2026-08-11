@@ -54,11 +54,22 @@ build refuses to adopt the existing staging directory until it is marked with
 - Publishable types now include bioinformatics artifacts (`.dna`, `.aln`,
   `.fa`, `.fasta`, `.treefile`, `.nwk`, `.gb`) and tabular data (`.csv`,
   `.tsv`).
+- **Page-to-page wikilinks.** `[[Build Guide]]`, `[[Guide|alias]]` and
+  `[[Guide#Heading]]` become real links; only `![[embeds]]` were handled before,
+  so page links reached the site as literal double-bracketed text. Heading
+  anchors match mystmd's own slugs, including the `id-` prefix it gives a slug
+  that starts with a digit — which is most headings in a numbered protocol.
+- **Audit: links to missing headings.** A link whose page exists but whose
+  heading was renamed or renumbered passes every other check and silently drops
+  the reader at the top of the page. Reported per source page.
+- **Audit: broken page links and unterminated links.** `[[Page]]` links are
+  checked against the vault, and a link missing its closing parenthesis — which
+  renders as literal text on the site — is reported as such.
 - Single source of truth for publication policy (`policy.py`) and naming
   (`naming.py`), shared by the build, config generation and audit tooling.
 - `deploy/`: systemd timer and unit, a build wrapper that takes a lock, stops
   MyST, syncs and restarts it, plus setup documentation.
-- Test suite: 251 tests. CI runs pytest and ruff on Python 3.12.
+- Test suite: 328 tests. CI runs pytest and ruff on Python 3.12.
 
 ### Security
 - Staging no longer deletes the directory `output` points at. Output paths that
@@ -106,6 +117,30 @@ build refuses to adopt the existing staging directory until it is marked with
 - `prettify_folder_name` had three different behaviors across four copies. Page
   titles for all-digit filenames (e.g. `2025.md`) were empty, and hyphenated
   names rendered as `Research-Biology-La` rather than `Research Biology La`.
+- **Display titles no longer flatten capitals that carry meaning.** `str.title()`
+  lowercases the rest of every word, so `NI_DAQ_testing` became "Ni Daq Testing",
+  `LOV_domain_phylogenetics` became "Lov Domain...", and `0p5mT` — a field
+  strength of 0.5 mT — became "P5Mt". A word carrying any capital is now left as
+  written, which also preserves the lowercase-first convention in `pRSETb` and
+  `phrB`. All-lowercase words, which have nothing to preserve, go through an
+  acronym table in `naming.py`; add entries there as new ones turn up.
+  `DISPLAY_NAMES` overrides now apply at any depth, not only to vaults and
+  projects.
+- Only a one- or two-digit ordering prefix is stripped from a display title. The
+  greedy strip also ate the date off `20250918_rampdown.md`, and a folder of
+  entries distinguished only by date collapsed into one repeated nav title.
+- **Two vault names that sanitize alike no longer overwrite each other.**
+  `to order.dna` and `to_order.dna` both stage as `to_order.dna`; both were
+  written to that path, so the published file was whichever was walked last and
+  every build reported them as changed forever — a spurious commit in the
+  staging repo every night. The collision is now reported and resolved
+  deterministically.
+- Wikilink conversion is code-aware. `df[['time', 'signal']]` is pandas column
+  selection, and a vault with a matching page name would have had its published
+  code rewritten into a markdown link.
+- Audit link scanning handles balanced parentheses in a filename.
+  `Linear_ramp_B(5100).png` is real, and the previous regex truncated it at the
+  first `)` and reported a broken reference to a file nobody had written.
 
 ### Removed
 - `generate_myst.py` and `utils.py` — both superseded and imported by nothing.

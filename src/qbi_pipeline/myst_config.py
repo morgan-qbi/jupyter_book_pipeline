@@ -87,7 +87,9 @@ def scan_chapter_contents(chapter_path, base_path):
         ])
         if sub_files:
             sub_entry = {
-                'title': prettify_folder_name(subdir.name),
+                # get_display_name, not prettify: an override in DISPLAY_NAMES
+                # should work at any depth, not only for vaults and projects.
+                'title': get_display_name(subdir.name),
                 'children': []
             }
             # Check for subdir README
@@ -135,7 +137,7 @@ def scan_project_structure(project_path, base_path):
 
     for chapter in chapter_folders:
         chapter_num = chapter.name[0]
-        chapter_title = CHAPTER_NAMES.get(chapter_num, prettify_folder_name(chapter.name))
+        chapter_title = CHAPTER_NAMES.get(chapter_num, get_display_name(chapter.name))
 
         children = scan_chapter_contents(chapter, base_path)
 

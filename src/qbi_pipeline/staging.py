@@ -330,6 +330,7 @@ def sync_vault(source_path, staging_path, allowed_extensions=None, dry_run=False
     # and can flag references that would render as broken links.
     publishable = []
     unpublished = set()
+    claimed = {}
 
     for item, relative_path in iter_vault_files(source_path, stats=traversal_stats):
         suffix = item.suffix.lower()
@@ -355,6 +356,22 @@ def sync_vault(source_path, staging_path, allowed_extensions=None, dry_run=False
             unpublished.add(staged_relative)
             continue
 
+        # Sanitizing spaces to underscores can map two distinct vault files onto
+        # one staged path -- `to order.dna` and `to_order.dna` both become
+        # `to_order.dna`. Both used to be written, each overwriting the other,
+        # so the published file was whichever came last and every build reported
+        # them as changed forever. Traversal is sorted, so first wins is stable.
+        previous = claimed.get(staged_relative)
+        if previous is not None:
+            print(
+                f"Warning: {relative_path} and {previous} both stage as "
+                f"{staged_relative}; publishing {previous}. Rename one of them -- "
+                f"the names differ only by characters that are not URL-safe."
+            )
+            changes['skipped_collision'] += 1
+            continue
+
+        claimed[staged_relative] = relative_path
         census.record(suffix, was_published=True)
         publishable.append((item, relative_path, staged_relative, suffix))
 
@@ -413,4 +430,5 @@ def render_changes(changes):
         f"{changes['skipped_type']} skipped by type"
         + (f", {changes['skipped_symlink']} symlinks refused" if changes['skipped_symlink'] else "")
         + (f", {changes['skipped_invalid']} invalid notebooks" if changes['skipped_invalid'] else "")
+        + (f", {changes['skipped_collision']} name collisions" if changes['skipped_collision'] else "")
     )
