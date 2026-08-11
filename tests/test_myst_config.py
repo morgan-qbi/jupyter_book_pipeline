@@ -102,8 +102,16 @@ def test_toc_paths_always_use_forward_slashes(staging):
 # =============================================================================
 
 def test_vault_structure_uses_display_name_overrides(staging):
+    from qbi_pipeline.naming import configure_display_names
+
+    configure_display_names({"research-biology-la": "Research: Biology LA"})
     entry = scan_vault_structure(staging / "research-biology-la", staging)
     assert entry["title"] == "Research: Biology LA"
+
+
+def test_vault_structure_without_overrides_falls_back_to_prettify(staging):
+    entry = scan_vault_structure(staging / "research-biology-la", staging)
+    assert entry["title"] == "Research Biology La"
 
 
 def test_chapters_are_titled_from_the_chapter_name_table(staging):

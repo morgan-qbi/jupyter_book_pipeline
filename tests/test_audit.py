@@ -10,6 +10,7 @@ import pytest
 from qbi_pipeline.audit.checks import (
     check_broken_anchors,
     check_broken_references,
+    check_invalid_notebooks,
     collect_anchors,
     get_all_files,
     iter_markdown_links,
@@ -185,6 +186,45 @@ def test_confidential_folders_never_reach_the_report(vault):
     write(vault / "Public.md", "## Setup\n")
 
     assert anchors(vault) == []
+
+
+# =============================================================================
+# Notebooks that cannot be published
+# =============================================================================
+
+def notebooks(vault):
+    return check_invalid_notebooks(get_all_files(vault), vault)
+
+
+def test_empty_json_notebook_is_reported(vault):
+    """`{}` is valid JSON and passes any JSON check, but has no cells. The
+    build skips it silently into a log nobody reads."""
+    write(vault / "analysis.ipynb", "{}")
+
+    found = notebooks(vault)
+    assert len(found) == 1
+    assert found[0]["file"] == "analysis.ipynb"
+
+
+def test_unparseable_notebook_is_reported(vault):
+    write(vault / "broken.ipynb", "not json at all")
+
+    assert len(notebooks(vault)) == 1
+
+
+def test_valid_notebook_is_clean(vault):
+    write(
+        vault / "good.ipynb",
+        '{"cells": [], "nbformat": 4, "nbformat_minor": 5, "metadata": {}}',
+    )
+
+    assert notebooks(vault) == []
+
+
+def test_markdown_is_not_checked_as_a_notebook(vault):
+    write(vault / "notes.md", "# Notes\n")
+
+    assert notebooks(vault) == []
 
 
 # =============================================================================

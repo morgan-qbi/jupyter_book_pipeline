@@ -6,28 +6,45 @@ sanitizing filenames for the web.
 
 `prettify_folder_name` previously existed in four places with three different
 behaviors: the copy in preprocessing.py neither handled hyphens (so every
-real vault name, e.g. `research-biology-la`, rendered as `Research-Biology-La`)
-nor guarded against names made entirely of digits (so a `2025` folder produced
-an empty string). This module carries the corrected implementation, and every
-caller now uses it.
+hyphenated vault name, e.g. `research-team-one`, rendered as
+`Research-Team-One`) nor guarded against names made entirely of digits (so a
+`2025` folder produced an empty string). This module carries the corrected
+implementation, and every caller now uses it.
 """
 
 import os
 import re
 from pathlib import Path
 
-# Display-name overrides for vault and project folder names.
-# Keys are the folder names on disk, values are exact display names.
-# Anything not listed falls through to prettify_folder_name().
-DISPLAY_NAMES = {
-    'ecoli_flavoprotein_expression': 'E. coli Flavoprotein Expression',
-    'research-biology-la': 'Research: Biology LA',
-    'research-biology-md': 'Research: Biology MD',
-    'research-bio-redox': 'Research: Bio Redox',
-    'bacterioscope': 'Bacterioscope',
-    'research-physics-la': 'Research: Physics LA',
-    'research-physics-theory': 'Research: Physics Theory',
-}
+# Display-name overrides for folder names, at any depth. Keys are the folder
+# names on disk, values are exact display names. Anything not listed falls
+# through to prettify_folder_name().
+#
+# Empty here, and populated from the build config's `display_names:` key. These
+# are one institute's vault and project names -- configuration, not code. That
+# they no longer sit in a public repository is a secondary benefit; the real
+# reason is that the next institute to use this should not have to edit a
+# library module to name its own folders.
+DISPLAY_NAMES = {}
+
+
+def configure_display_names(mapping):
+    """
+    Install display-name overrides from a build config.
+
+    Updates in place rather than rebinding, because other modules import this
+    dict by reference.
+    """
+    DISPLAY_NAMES.clear()
+    if not mapping:
+        return
+    if not isinstance(mapping, dict):
+        raise ValueError("`display_names` must be a mapping of folder name to display name")
+    for folder, display in mapping.items():
+        if not isinstance(display, str):
+            raise ValueError(f"`display_names` entry for {folder!r} must be a string")
+        DISPLAY_NAMES[str(folder)] = display
+
 
 # Terms that are written lowercase on disk but are not lowercase words.
 #

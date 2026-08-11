@@ -41,7 +41,7 @@ qbi build --config build_config.yml --dry-run
 # Vault hygiene report: broken references and page links, links to headings
 # that no longer exist, unterminated links, Notion import leftovers
 qbi audit ../path/to/vault
-qbi audit /mnt/raid-storage/shared --all -d reports/
+qbi audit /srv/qbi --all -d reports/
 
 cd _build_staging && myst start
 ```
@@ -81,7 +81,7 @@ Source vaults are never modified.
 | TIFF | Converted to PNG, since no browser renders TIFF inline. 16-bit and float images are rescaled to 8-bit for display |
 | Video | `.mp4` renders inline as `<video>`; `.mov` and `.webm` publish as download links, because MyST renders those as a broken `<img>` |
 | Links | Resolves Obsidian `![[embeds]]`, `[[page links]]` and loose markdown paths against a vault-wide index — Obsidian resolves links by searching, not by strict relative path. Skips code, so pandas `df[['a','b']]` is left alone |
-| Titles | Derived from the filename, but capitals already in a name are preserved: `NI_DAQ_testing` and `pRSETb` mean what they say. Add lowercase acronyms to `ACRONYMS` in `naming.py` |
+| Titles | Derived from the filename, but capitals already in a name are preserved: `NI_DAQ_testing` and `pRSETb` mean what they say. Lowercase acronyms come from `ACRONYMS` in `naming.py`; exact names come from `display_names` in the build config |
 | Text | Normalizes dashes and escapes `@` for MyST citations, **skipping code blocks and inline code** |
 | Notebooks | Malformed `.ipynb` files are skipped with a warning rather than failing the whole site build |
 
@@ -103,7 +103,7 @@ adopt an existing staging directory until it is marked.
 
 ```bash
 pip install -e ".[dev]"
-pytest          # 328 tests
+pytest          # 341 tests
 ruff check src tests
 ```
 

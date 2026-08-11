@@ -111,16 +111,57 @@ def test_previously_divergent_cases_now_agree(raw, expected):
 
 
 # =============================================================================
-# get_display_name — override table
+# get_display_name — overrides, configured from the build config
 # =============================================================================
 
 def test_display_name_prefers_override_table():
-    assert config_generator.get_display_name("research-biology-la") == "Research: Biology LA"
-    assert config_generator.get_display_name("ecoli_flavoprotein_expression") == "E. coli Flavoprotein Expression"
+    naming.configure_display_names({
+        "research-team-one": "Research: Team One",
+        "ecoli_expression": "E. coli Expression",
+    })
+    assert config_generator.get_display_name("research-team-one") == "Research: Team One"
+    assert config_generator.get_display_name("ecoli_expression") == "E. coli Expression"
 
 
 def test_display_name_falls_through_to_prettify():
     assert config_generator.get_display_name("some_new_vault") == "Some New Vault"
+
+
+def test_overrides_are_empty_until_configured():
+    """They live in build_config.yml, not in the source. One institute's folder
+    names are configuration, and this repository is public."""
+    assert naming.DISPLAY_NAMES == {}
+
+
+def test_configuring_replaces_rather_than_accumulates():
+    naming.configure_display_names({"a": "A"})
+    naming.configure_display_names({"b": "B"})
+    assert "a" not in naming.DISPLAY_NAMES
+    assert naming.DISPLAY_NAMES["b"] == "B"
+
+
+def test_configure_updates_the_dict_other_modules_imported():
+    """myst_config imports DISPLAY_NAMES by reference, so rebinding it here
+    would leave that module looking at a stale dict."""
+    naming.configure_display_names({"a": "A"})
+    assert config_generator.DISPLAY_NAMES is naming.DISPLAY_NAMES
+    assert config_generator.DISPLAY_NAMES["a"] == "A"
+
+
+def test_no_overrides_is_accepted():
+    naming.configure_display_names(None)
+    assert naming.DISPLAY_NAMES == {}
+
+
+@pytest.mark.parametrize("bad", [["a", "b"], "a: A", 42])
+def test_malformed_override_table_is_rejected(bad):
+    with pytest.raises(ValueError):
+        naming.configure_display_names(bad)
+
+
+def test_non_string_display_name_is_rejected():
+    with pytest.raises(ValueError):
+        naming.configure_display_names({"a": ["A"]})
 
 
 def test_acronym_table_is_lowercase_keyed():

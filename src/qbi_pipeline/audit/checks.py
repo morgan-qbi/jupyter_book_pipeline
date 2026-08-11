@@ -15,6 +15,7 @@ from ..policy import (
     iter_vault_dirs,
     iter_vault_files,
 )
+from ..staging import is_valid_notebook
 from ..transforms.links import slugify_heading
 
 # =============================================================================
@@ -411,6 +412,30 @@ def check_empty_files(files, vault_path):
                     })
             except Exception:
                 continue
+    return issues
+
+
+def check_invalid_notebooks(files, vault_path):
+    """
+    Find notebooks the build cannot publish.
+
+    The build already skips these, but it says so in the cron log, which no
+    researcher reads. The notebook is simply absent from the site and nobody
+    is told. A file containing `{}` is valid JSON and passes any JSON check,
+    yet has no `cells` and no `nbformat`, and used to fail the entire build.
+    """
+    issues = []
+    for f in files:
+        if f.suffix.lower() != '.ipynb':
+            continue
+        if is_valid_notebook(f):
+            continue
+        issues.append({
+            'file': str(f.relative_to(vault_path)),
+            'suggestion': 'This notebook is empty or malformed, so it is skipped '
+                          'and never appears on the site. Re-save it from Jupyter, '
+                          'or delete it if it was created by accident.'
+        })
     return issues
 
 

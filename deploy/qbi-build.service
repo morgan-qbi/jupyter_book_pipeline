@@ -6,15 +6,15 @@ After=network.target
 
 [Service]
 Type=oneshot
-ExecStart=/mnt/raid-storage/shared/jupyter-book-pipeline/deploy/qbi-build.sh
+ExecStart=/srv/qbi/jupyter-book-pipeline/deploy/qbi-build.sh
 
 # Needs root (or a narrow sudoers rule) to stop and start the MyST unit.
 User=root
 
 # Override any of these without editing the script.
-Environment=QBI_REPO=/mnt/raid-storage/shared/jupyter-book-pipeline
-Environment=QBI_CONFIG=/mnt/raid-storage/shared/jupyter-book-pipeline/build_config.yml
-Environment=QBI_STAGING=/mnt/raid-storage/shared/_build_staging
+Environment=QBI_REPO=/srv/qbi/jupyter-book-pipeline
+Environment=QBI_CONFIG=/srv/qbi/jupyter-book-pipeline/build_config.yml
+Environment=QBI_STAGING=/srv/qbi/_build_staging
 Environment=QBI_MYST_SERVICE=myst
 
 # A vault sync over thousands of files, with image re-encoding, can take a

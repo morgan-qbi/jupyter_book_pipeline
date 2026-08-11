@@ -5,7 +5,7 @@
 > as a record — the reasoning here is not recoverable from the diffs.
 
 **Baseline audited:** commit `ab4169e`, 2026-08-05
-**Production runtime:** Python 3.12.3 on `/mnt/raid-storage/shared` (Linux); this Windows checkout is a synced copy.
+**Production runtime:** Python 3.12.3 on `/srv/qbi` (Linux); this Windows checkout is a synced copy.
 
 > **Note:** this file was accidentally truncated during Phase 3 and reconstructed
 > from the session record. Substance is intact; exact original wording of a few
@@ -49,7 +49,7 @@ Sync refuses symlinked files rather than dereferencing them, and counts them in 
 **S-4 — `shutil.rmtree` on an unvalidated config path.** — ✅ **FIXED** (Phase 2)
 There is no `rmtree` any more. Three guards stack: `validate_output_path` rejects an output that is, or contains, a vault or the root; `assert_safe_staging_target` refuses any non-empty directory lacking a `.qbi-staging` marker; and pruning only removes files absent from the expected set, never whole trees. Both failure modes verified end-to-end with source data left intact.
 
-*Original:* `staging_path` was recursively deleted with no guard, and `output` was never validated. `output: "/mnt/raid-storage/shared"` — one line above the real vault paths in the config — would have deleted the entire research share.
+*Original:* `staging_path` was recursively deleted with no guard, and `output` was never validated. `output: "/srv/qbi"` — one line above the real vault paths in the config — would have deleted the entire research share.
 
 ### 🟠 High
 

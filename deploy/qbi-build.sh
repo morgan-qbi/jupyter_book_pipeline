@@ -8,9 +8,9 @@
 
 set -euo pipefail
 
-REPO="${QBI_REPO:-/mnt/raid-storage/shared/jupyter-book-pipeline}"
+REPO="${QBI_REPO:-/srv/qbi/jupyter-book-pipeline}"
 CONFIG="${QBI_CONFIG:-$REPO/build_config.yml}"
-STAGING="${QBI_STAGING:-/mnt/raid-storage/shared/_build_staging}"
+STAGING="${QBI_STAGING:-/srv/qbi/_build_staging}"
 SERVICE="${QBI_MYST_SERVICE:-myst}"
 VENV="${QBI_VENV:-$REPO/venv}"
 LOCK="${QBI_LOCK:-/var/lock/qbi-build.lock}"

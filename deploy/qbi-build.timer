@@ -11,7 +11,7 @@ Description=Rebuild the QBI ELN site periodically
 # from overlapping if one takes longer than the interval.
 OnCalendar=*-*-* 02:15:00
 
-# If Frida was off at 02:15, run once it comes back rather than skipping a day.
+# If the build server was off at 02:15, run once it comes back rather than skipping a day.
 Persistent=true
 
 # Avoid every timer on the box firing at the same instant.

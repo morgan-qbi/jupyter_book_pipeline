@@ -1,24 +1,36 @@
 # QBI Build Configuration — example
 #
 # Copy to build_config.yml (which is gitignored) and adjust paths.
-# Usage: python build_pipeline.py -c build_config.yml
+# Usage: qbi build --config build_config.yml
+#
+# Paths here are placeholders. This repository is public, so the real paths and
+# folder names live only in build_config.yml.
 
 # Where the site is staged. Synced incrementally, not rebuilt, so this
 # directory can safely be a git repository.
 #
 # It must not be, or contain, a vault or the root path — the build refuses
 # those outright, because sync prunes files it considers stale.
-output: "/mnt/raid-storage/shared/_build_staging"
+output: "/srv/qbi/_build_staging"
 
 # Optional. Its README/index is used as the site homepage.
-root: "/mnt/raid-storage/shared"
+root: "/srv/qbi"
 
 vaults:
-  - path: "/mnt/raid-storage/shared/research-biology-md"
-  - path: "/mnt/raid-storage/shared/research-biology-la"
-  - path: "/mnt/raid-storage/shared/research-physics-la"
-  - path: "/mnt/raid-storage/shared/research-physics-theory"
-  - path: "/mnt/raid-storage/shared/research-bio-redox"
+  - path: "/srv/qbi/research-team-one"
+  - path: "/srv/qbi/research-team-two"
+
+# Optional. Exact display names for folders whose real name does not
+# title-case well, at any depth: vaults, projects, or subfolders.
+#
+# Most names do not need an entry. Capitals already present in a folder name
+# are preserved, so `NI_DAQ_testing` and `pRSETb` come out right on their own,
+# and lowercase acronyms are handled by the ACRONYMS table in naming.py. This
+# is for the rest: punctuation, spacing, and species names.
+#
+# display_names:
+#   research-team-one: "Research: Team One"
+#   ecoli_expression: "E. coli Expression"
 
 # File types are published by permission, not by omission: anything not on the
 # allow-list is skipped and reported. The default covers pages (.md, .ipynb),

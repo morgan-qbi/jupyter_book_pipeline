@@ -1,4 +1,4 @@
-# Running the pipeline on Frida
+# Running the pipeline on the build server
 
 The build is incremental: it writes only files that changed and prunes files
 that no longer exist in a vault. An unchanged vault costs one pass over the
@@ -15,7 +15,7 @@ stale, and pointing `output:` at a real data directory would otherwise delete
 it. Claim the directory once:
 
 ```bash
-touch /mnt/raid-storage/shared/_build_staging/.qbi-staging
+touch /srv/qbi/_build_staging/.qbi-staging
 ```
 
 **2. The first build will be a large diff.** Behavior changed: page titles,
@@ -24,8 +24,8 @@ permitted file types. Anything already in staging that is no longer publishable
 gets pruned. Make that reviewable and revertable:
 
 ```bash
-cd /mnt/raid-storage/shared/_build_staging
-cp /mnt/raid-storage/shared/jupyter-book-pipeline/deploy/staging.gitignore .gitignore
+cd /srv/qbi/_build_staging
+cp /srv/qbi/jupyter-book-pipeline/deploy/staging.gitignore .gitignore
 git init && git add -A && git commit -m "site as it stands before the pipeline refactor"
 ```
 
@@ -43,7 +43,7 @@ target, whenever a page links to a file the allow-list skipped.
 ## Install
 
 ```bash
-cd /mnt/raid-storage/shared/jupyter-book-pipeline
+cd /srv/qbi/jupyter-book-pipeline
 venv/bin/pip install -e .          # provides the `qbi` command
 venv/bin/qbi build --config build_config.yml --dry-run
 ```
@@ -112,7 +112,7 @@ Staging is a git repo and the pipeline never touches `.git`, so a bad build is
 recoverable:
 
 ```bash
-cd /mnt/raid-storage/shared/_build_staging
+cd /srv/qbi/_build_staging
 git log --oneline
 git diff HEAD~1                 # what the last build changed
 git reset --hard HEAD~1         # roll the site back

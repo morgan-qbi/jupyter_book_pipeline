@@ -1,5 +1,5 @@
 # Copy this to the staging directory as .gitignore before the first build:
-#   cp deploy/staging.gitignore /mnt/raid-storage/shared/_build_staging/.gitignore
+#   cp deploy/staging.gitignore /srv/qbi/_build_staging/.gitignore
 #
 # Without it, `git status` in staging is dominated by MyST's build output and
 # the "did anything change?" check in qbi-build.sh always says yes, so MyST

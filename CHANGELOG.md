@@ -65,11 +65,18 @@ build refuses to adopt the existing staging directory until it is marked with
 - **Audit: broken page links and unterminated links.** `[[Page]]` links are
   checked against the vault, and a link missing its closing parenthesis — which
   renders as literal text on the site — is reported as such.
+- **Audit: notebooks that cannot be published.** The build already skipped
+  malformed notebooks, but only said so in a log nobody reads — the notebook was
+  simply absent from the site and its author was never told.
+- `display_names` build-config key: exact display names for folders whose real
+  name does not title-case well, applied at any depth. These were hardcoded in
+  `naming.py`; one institute's folder names are configuration, not library code,
+  and this repository is public.
 - Single source of truth for publication policy (`policy.py`) and naming
   (`naming.py`), shared by the build, config generation and audit tooling.
 - `deploy/`: systemd timer and unit, a build wrapper that takes a lock, stops
   MyST, syncs and restarts it, plus setup documentation.
-- Test suite: 328 tests. CI runs pytest and ruff on Python 3.12.
+- Test suite: 341 tests. CI runs pytest and ruff on Python 3.12.
 
 ### Security
 - Staging no longer deletes the directory `output` points at. Output paths that

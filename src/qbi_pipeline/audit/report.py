@@ -12,6 +12,7 @@ from .checks import (
     check_empty_files,
     check_generic_filenames,
     check_image_linebreaks,
+    check_invalid_notebooks,
     check_notion_imports,
     check_pasted_images,
     get_all_files,
@@ -46,6 +47,7 @@ def generate_report(vault_path, vault_name=None):
         ("Pasted/Screenshot Images to Rename", check_pasted_images(files, vault_path)),
         ("Generic Filenames", check_generic_filenames(files, vault_path)),
         ("Empty Files", check_empty_files(files, vault_path)),
+        ("Notebooks That Cannot Be Published", check_invalid_notebooks(files, vault_path)),
         ("Inline Images (need linebreaks)", check_image_linebreaks(files, vault_path)),
         ("Notion Import Artifacts", check_notion_imports(files, vault_path)),
     ]

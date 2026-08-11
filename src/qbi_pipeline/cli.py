@@ -11,13 +11,13 @@ what a build changed.
 
 Usage:
     # Single vault
-    python build_pipeline.py ../research_biology_la ../_build_staging
+    qbi build ../path/to/vault ../_build_staging
 
     # Multi vault
-    python build_pipeline.py --config build_config.yml
+    qbi build --config build_config.yml
 
     # Preview what would change, writing nothing
-    python build_pipeline.py --config build_config.yml --dry-run
+    qbi build --config build_config.yml --dry-run
 """
 
 import argparse
@@ -32,6 +32,7 @@ from .myst_config import (
     generate_multi_vault_config,
     generate_myst_config,
 )
+from .naming import configure_display_names
 from .policy import PUBLISHABLE_EXTENSIONS
 from .staging import (
     assert_safe_staging_target,
@@ -119,6 +120,12 @@ def load_build_config(config_path):
             [v['path'] for v in config['vaults']],
             config.get('root'),
         )
+    except ValueError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+
+    try:
+        configure_display_names(config.get('display_names'))
     except ValueError as e:
         print(f"Error: {e}")
         sys.exit(1)
@@ -262,7 +269,7 @@ def build_parser():
         help='Sync vaults into the staging directory',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='Examples:\n'
-               '  qbi build ../research-biology-la ../_build_staging\n'
+               '  qbi build ../research-team-one ../_build_staging\n'
                '  qbi build --config build_config.yml\n'
                '  qbi build --config build_config.yml --dry-run',
     )
@@ -281,8 +288,8 @@ def build_parser():
         help='Report vault hygiene issues',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='Examples:\n'
-               '  qbi audit ../research-biology-la\n'
-               '  qbi audit /mnt/raid-storage/shared --all -d reports/',
+               '  qbi audit ../research-team-one\n'
+               '  qbi audit /srv/qbi --all -d reports/',
     )
     audit.add_argument('path', help='Path to a vault, or a parent directory of vaults')
     audit.add_argument('--all', action='store_true',
