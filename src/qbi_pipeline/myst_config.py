@@ -11,17 +11,18 @@ Multi vault:
     generate_multi_vault_config(staged_vaults, staging_path)
 """
 
-from pathlib import Path
-import yaml
 import uuid
+from pathlib import Path
 
-from .policy import is_navigable_name
+import yaml
+
 # Re-exported so existing callers and tests keep working.
 from .naming import (  # noqa: F401
     DISPLAY_NAMES,
     get_display_name,
     prettify_folder_name,
 )
+from .policy import is_navigable_name
 
 CHAPTER_NAMES = {
     '1': 'ELN',

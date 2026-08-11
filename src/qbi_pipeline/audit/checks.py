@@ -11,8 +11,6 @@ import re
 from pathlib import Path
 
 from ..policy import (
-    EXCLUDED_DIRS,
-    IMAGE_EXTENSIONS,
     is_excluded_name,
     iter_vault_dirs,
     iter_vault_files,

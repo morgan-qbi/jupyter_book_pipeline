@@ -146,3 +146,38 @@ def test_search_fallback_is_skipped_without_an_index():
     """Back-compat: the index argument is optional."""
     src = "![](attachments/plot.png)"
     assert rewrite_absolute_paths(src, "eln/note.md", set()) == src
+
+
+def test_plain_link_with_a_loose_path_is_also_resolved():
+    """The same loose-path problem applies to links, not just images: a note
+    can link a notebook by a path relative to the project root."""
+    index = {"calibration.ipynb": "proj/3_code/calibration.ipynb"}
+    paths = {"proj/3_code/calibration.ipynb"}
+
+    out = rewrite_absolute_paths(
+        "[cal](3_code/calibration.ipynb)", "proj/1_eln/manual.md", paths, index
+    )
+    assert out == "[cal](../3_code/calibration.ipynb)"
+
+
+def test_plain_link_keeps_its_text_and_stays_a_link():
+    index = {"data.csv": "proj/2_data/data.csv"}
+    paths = {"proj/2_data/data.csv"}
+
+    out = rewrite_absolute_paths("[the data](data.csv)", "proj/1_eln/n.md", paths, index)
+    assert out.startswith("[the data](")
+    assert not out.startswith("![")
+
+
+def test_image_syntax_is_preserved_through_the_fallback():
+    index = {"plot.png": "eln/attachments/plot.png"}
+    paths = {"eln/attachments/plot.png"}
+
+    out = rewrite_absolute_paths("![alt](attachments/plot.png)", "eln/2025/n.md", paths, index)
+    assert out == "![alt](../attachments/plot.png)"
+
+
+def test_anchors_and_mailto_are_untouched():
+    for url in ("#results", "mailto:ada@qbi.org", "//cdn.example.org/x.js"):
+        src = f"[x]({url})"
+        assert rewrite_absolute_paths(src, "n.md", set(), {}) == src

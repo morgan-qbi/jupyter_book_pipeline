@@ -24,18 +24,17 @@ import shutil
 from collections import Counter
 from pathlib import Path
 
+from .index import build_file_index
 from .naming import staged_relative_path
 from .policy import (
-    PRESERVED_STAGING_NAMES,
-    is_converted_extension,
     PUBLISHABLE_EXTENSIONS,
     STAGING_MARKER,
     WEB_IMAGE_EXTENSIONS,
+    is_converted_extension,
     is_preserved_staging_name,
     is_publishable_extension,
     iter_vault_files,
 )
-from .index import build_file_index
 from .transforms import convert_image, optimize_image, process_markdown_content
 
 
@@ -350,7 +349,7 @@ def sync_vault(source_path, staging_path, allowed_extensions=None, dry_run=False
     manifest = load_manifest(staging_path)
 
     # Second pass: write.
-    for item, relative_path, staged_relative, suffix in publishable:
+    for item, _relative_path, staged_relative, suffix in publishable:
         output_path = staging_path / staged_relative
 
         if dry_run:

@@ -1,0 +1,31 @@
+[Unit]
+Description=Rebuild the QBI ELN site from the research vaults
+# Ordering only: the build stops and starts the MyST service itself, so it must
+# not be bound to it.
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/mnt/raid-storage/shared/jupyter-book-pipeline/deploy/qbi-build.sh
+
+# Needs root (or a narrow sudoers rule) to stop and start the MyST unit.
+User=root
+
+# Override any of these without editing the script.
+Environment=QBI_REPO=/mnt/raid-storage/shared/jupyter-book-pipeline
+Environment=QBI_CONFIG=/mnt/raid-storage/shared/jupyter-book-pipeline/build_config.yml
+Environment=QBI_STAGING=/mnt/raid-storage/shared/_build_staging
+Environment=QBI_MYST_SERVICE=myst
+
+# A vault sync over thousands of files, with image re-encoding, can take a
+# while on first run. Do not let systemd kill it mid-write.
+TimeoutStartSec=3600
+
+# The site is down while this runs, so keep it off the CPU's critical path
+# without letting it crawl.
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
+
+[Install]
+WantedBy=multi-user.target

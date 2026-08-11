@@ -198,13 +198,13 @@ def test_sibling_output_is_accepted(tmp_path):
 def test_reference_to_a_skipped_file_is_reported(vault, staging, capsys):
     """The allow-list's failure mode is a missing file, which is invisible
     unless a page that links to it says so."""
-    write(vault / "data" / "results.csv", "a,b\n")
-    write(vault / "1_eln" / "entry.md", "See ![[results.csv]] for details\n")
+    write(vault / "data" / "results.xlsx", "a,b\n")
+    write(vault / "1_eln" / "entry.md", "See ![[results.xlsx]] for details\n")
 
     sync_vault(vault, staging)
     output = capsys.readouterr().out
 
-    assert "results.csv" in output
+    assert "results.xlsx" in output
     assert "not a published file type" in output
 
 
@@ -263,3 +263,42 @@ def test_manifest_is_not_pruned_as_stale(tmp_path, staging):
 
     sync_vault(v, staging)
     assert (staging / MANIFEST_NAME).exists()
+
+
+# =============================================================================
+# MyST's own artifacts must survive a sync
+# =============================================================================
+
+def test_myst_build_directory_is_never_pruned(vault, staging):
+    """On the server, `myst start` runs as a service with _build open. Pruning
+    it would delete the build cache and the theme's node_modules underneath a
+    running process on every cron build."""
+    write(staging / "_build" / "site" / "content" / "x.json", "{}")
+    write(staging / "_build" / "templates" / "site" / "myst" / "book-theme"
+          / "node_modules" / "react" / "index.js", "x")
+
+    sync_vault(vault, staging)
+
+    assert (staging / "_build" / "site" / "content" / "x.json").exists()
+    assert (staging / "_build" / "templates" / "site" / "myst" / "book-theme"
+            / "node_modules" / "react" / "index.js").exists()
+
+
+@pytest.mark.parametrize("name", ["_build", "_static", "_next", ".git", ".cache"])
+def test_underscore_and_dot_prefixed_entries_are_preserved(vault, staging, name):
+    """Vault content can never start with _ or . (policy excludes those), so
+    anything in staging that does belongs to something else."""
+    write(staging / name / "file.txt", "x")
+    sync_vault(vault, staging)
+    assert (staging / name / "file.txt").exists()
+
+
+def test_ordinary_stale_content_is_still_pruned(vault, staging):
+    """The preserve rule must not become a licence to leave anything behind."""
+    write(staging / "old_page.md", "stale\n")
+    write(staging / "chapter" / "old.md", "stale\n")
+
+    sync_vault(vault, staging)
+
+    assert not (staging / "old_page.md").exists()
+    assert not (staging / "chapter" / "old.md").exists()

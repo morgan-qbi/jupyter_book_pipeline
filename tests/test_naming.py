@@ -9,7 +9,6 @@ import pytest
 from qbi_pipeline import myst_config as config_generator
 from qbi_pipeline import naming
 
-
 # =============================================================================
 # sanitize_filename / sanitize_path
 # =============================================================================

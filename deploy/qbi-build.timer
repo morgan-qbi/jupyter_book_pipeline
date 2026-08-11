@@ -1,0 +1,21 @@
+[Unit]
+Description=Rebuild the QBI ELN site periodically
+
+[Timer]
+# Every night at 02:15. The site is briefly unavailable during a build, so
+# prefer a quiet hour over a short interval.
+#
+# For a faster cadence, something like OnCalendar=*:0/30 (every 30 minutes)
+# works too -- the build is incremental, so an unchanged vault costs one pass
+# over the file tree and writes nothing. The lock in qbi-build.sh keeps runs
+# from overlapping if one takes longer than the interval.
+OnCalendar=*-*-* 02:15:00
+
+# If Frida was off at 02:15, run once it comes back rather than skipping a day.
+Persistent=true
+
+# Avoid every timer on the box firing at the same instant.
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

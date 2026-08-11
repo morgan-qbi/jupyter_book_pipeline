@@ -9,6 +9,7 @@ import re
 
 from ..naming import sanitize_path
 
+
 def normalize_notion_folders(content):
     """Fix Notion's weird export folder names"""
     content = re.sub(
@@ -21,15 +22,31 @@ def normalize_notion_folders(content):
     return content
 
 
+# Anything with a scheme, a protocol-relative prefix, or a page anchor is not a
+# path into the vault and must be left exactly as written.
+EXTERNAL_URL_PREFIXES = ('http://', 'https://', 'data:', 'mailto:', 'ftp://', '//', '#')
+
+
+def is_external_url(url):
+    """True if a link target points outside the vault"""
+    return url.strip().startswith(EXTERNAL_URL_PREFIXES)
+
+
 def normalize_markdown_link_urls(content):
-    """Sanitize URLs in standard markdown links"""
+    """
+    Sanitize URLs in standard markdown links.
+
+    External URLs are skipped (S-15). Sanitizing rewrites `%20` and spaces to
+    underscores, which is right for a vault path and wrong for a remote one --
+    it turned `https://example.org/my%20paper.pdf` into `.../my_paper.pdf` and
+    broke the link.
+    """
     def fix_url(match):
-        prefix = match.group(1)
-        text = match.group(2)
-        url = match.group(3)
-        sanitized_url = sanitize_path(url)
-        return f'{prefix}{text}]({sanitized_url})'
-    
+        prefix, text, url = match.group(1), match.group(2), match.group(3)
+        if is_external_url(url):
+            return match.group(0)
+        return f'{prefix}{text}]({sanitize_path(url)})'
+
     return re.sub(r'(!?\[)([^\]]*)\]\(([^)]+)\)', fix_url, content)
 
 

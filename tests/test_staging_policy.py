@@ -10,8 +10,8 @@ import sys
 
 import pytest
 
-from qbi_pipeline.policy import PUBLISHABLE_EXTENSIONS
 from qbi_pipeline.index import build_file_index
+from qbi_pipeline.policy import PUBLISHABLE_EXTENSIONS
 from qbi_pipeline.staging import assert_safe_staging_target, claim_staging_directory, sync_vault
 
 
@@ -106,14 +106,14 @@ def test_exact_staged_set_is_locked(vault, staging):
 def test_non_publishable_types_are_skipped(vault, staging):
     """S-2 regression guard: staging used to copy every file type, so a
     spreadsheet or key file dropped in a vault went straight to the web."""
-    write(vault / "grant_budget.csv", "salary,amount\n")
+    write(vault / "grant_budget.xlsx", "salary,amount\n")
     write(vault / "api_keys.txt", "sk-live-secret\n")
     write(vault / "notes.docx", "x")
 
     sync(vault, staging)
     files = staged_files(staging)
 
-    assert "grant_budget.csv" not in files
+    assert "grant_budget.xlsx" not in files
     assert "api_keys.txt" not in files
     assert "notes.docx" not in files
 
@@ -131,29 +131,29 @@ def test_publishable_types_are_staged(vault, staging):
 
 def test_extra_extensions_can_be_opted_in(vault, staging):
     """The census reports skipped types; opting one in is a config change."""
-    write(vault / "dataset.csv", "a,b\n")
+    write(vault / "dataset.xlsx", "a,b\n")
 
-    sync(vault, staging, allowed_extensions=PUBLISHABLE_EXTENSIONS | {".csv"})
-    assert "dataset.csv" in staged_files(staging)
+    sync(vault, staging, allowed_extensions=PUBLISHABLE_EXTENSIONS | {".xlsx"})
+    assert "dataset.xlsx" in staged_files(staging)
 
 
 def test_census_counts_published_and_skipped(vault, staging):
-    write(vault / "dataset.csv", "a,b\n")
-    write(vault / "other.csv", "a,b\n")
+    write(vault / "dataset.xlsx", "a,b\n")
+    write(vault / "other.xlsx", "a,b\n")
 
     census, _ = sync(vault, staging)
 
     assert census.published[".md"] == 3
-    assert census.skipped[".csv"] == 2
+    assert census.skipped[".xlsx"] == 2
     assert census.has_skips is True
 
 
 def test_census_reports_skipped_types_loudly(vault, staging):
-    write(vault / "dataset.csv", "a,b\n")
+    write(vault / "dataset.xlsx", "a,b\n")
     census, _ = sync(vault, staging)
     rendered = "\n".join(census.render("test-vault"))
 
-    assert ".csv" in rendered
+    assert ".xlsx" in rendered
     assert "SKIPPED" in rendered
     assert "publish_extensions" in rendered
 

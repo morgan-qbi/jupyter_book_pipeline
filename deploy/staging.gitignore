@@ -1,0 +1,15 @@
+# Copy this to the staging directory as .gitignore before the first build:
+#   cp deploy/staging.gitignore /mnt/raid-storage/shared/_build_staging/.gitignore
+#
+# Without it, `git status` in staging is dominated by MyST's build output and
+# the "did anything change?" check in qbi-build.sh always says yes, so MyST
+# gets restarted on every run for no reason.
+
+# MyST's build cache, rendered site, and the theme's node_modules.
+_build/
+
+# Pipeline bookkeeping: records each source file's size and mtime so converted
+# and optimized images are not re-encoded on every build. Safe to commit if you
+# would rather a fresh clone not redo that work; ignored here to keep diffs
+# about content.
+.qbi-manifest.json

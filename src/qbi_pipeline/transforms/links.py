@@ -10,7 +10,8 @@ import re
 from pathlib import Path
 
 from ..naming import get_relative_path, sanitize_filename, staged_relative_path
-from ..policy import WEB_IMAGE_EXTENSIONS
+from ..policy import INLINE_EXTENSIONS
+
 
 def convert_obsidian_links(content, current_file, file_index, path_set, unpublished=None):
     """
@@ -60,44 +61,44 @@ def convert_obsidian_links(content, current_file, file_index, path_set, unpublis
                     candidate = sanitized_path
                 else:
                     candidate = f"{current_dir}/{sanitized_path}"
-                
+
                 if candidate in path_set:
                     final_path = sanitized_path  # It's already relative and correct
                 else:
                     # Path doesn't exist either way - leave sanitized and hope for the best
                     print(f"Warning: Path not found: {sanitized_path} (referenced in {current_file})")
                     final_path = sanitized_path
-            
+
             warn_if_unpublished(sanitized_path, raw_reference)
 
-            if ext in WEB_IMAGE_EXTENSIONS:
+            if ext in INLINE_EXTENSIONS:
                 return f'![]({final_path})'
             else:
                 return f'[Download {filename}]({final_path})'
-        
+
         # Filename only - vault-wide lookup
         sanitized_lookup = sanitize_filename(raw_reference)
-        
+
         if sanitized_lookup not in file_index:
             print(f"Warning: File not found in index: {raw_reference} (referenced in {current_file})")
             return f'![[{raw_reference}]]'
-        
+
         file_path = file_index[sanitized_lookup]
         if isinstance(file_path, list):
             print(f"Warning: Multiple files named '{raw_reference}', using {file_path[0]}")
             file_path = file_path[0]
-        
+
         rel_path = get_relative_path(current_file, file_path)
         # The staged extension decides embed-vs-download: a .tif is published as
         # a .png and must render inline, not offer itself as a download.
         ext = Path(file_path).suffix.lower()
         warn_if_unpublished(file_path, raw_reference)
 
-        if ext in WEB_IMAGE_EXTENSIONS:
+        if ext in INLINE_EXTENSIONS:
             return f'![]({rel_path})'
         else:
             return f'[Download {raw_reference}]({rel_path})'
-    
+
     return re.sub(pattern, replacement, content)
 
 
@@ -118,14 +119,17 @@ def rewrite_absolute_paths(content, current_file, path_set, file_index=None):
     3. otherwise, a vault-wide lookup on the filename, which is what Obsidian
        itself would have done
     """
-    pattern = r'!\[([^\]]*)\]\(([^)]+)\)'
+    # Both images and plain links: a link to a notebook or a dataset suffers
+    # from exactly the same loose-path problem as an image.
+    pattern = r'(!?)\[([^\]]*)\]\(([^)]+)\)'
 
     def replacement(match):
-        alt_text = match.group(1)
-        url = match.group(2)
+        bang = match.group(1)
+        alt_text = match.group(2)
+        url = match.group(3)
 
-        # Skip external URLs
-        if url.startswith(('http://', 'https://', 'data:')):
+        # Skip external URLs and in-page anchors
+        if url.startswith(('http://', 'https://', 'data:', 'mailto:', '#', '//')):
             return match.group(0)
 
         # Resolve to the staged name, so a standard markdown link to a
@@ -134,7 +138,7 @@ def rewrite_absolute_paths(content, current_file, path_set, file_index=None):
 
         # 1. An absolute path from the vault root.
         if sanitized_url in path_set:
-            return f'![{alt_text}]({get_relative_path(current_file, sanitized_url)})'
+            return f'{bang}[{alt_text}]({get_relative_path(current_file, sanitized_url)})'
 
         # 2. Already correct relative to this page.
         current_dir = posixpath.dirname(str(current_file).replace('\\', '/'))
@@ -154,8 +158,8 @@ def rewrite_absolute_paths(content, current_file, path_set, file_index=None):
                 )
                 target = target[0]
             if target:
-                return f'![{alt_text}]({get_relative_path(current_file, target)})'
+                return f'{bang}[{alt_text}]({get_relative_path(current_file, target)})'
 
-        return f'![{alt_text}]({sanitized_url})'
+        return f'{bang}[{alt_text}]({sanitized_url})'
 
     return re.sub(pattern, replacement, content)

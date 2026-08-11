@@ -20,11 +20,12 @@ Usage:
     python build_pipeline.py --config build_config.yml --dry-run
 """
 
-import sys
-import shutil
 import argparse
-import yaml
+import shutil
+import sys
 from pathlib import Path
+
+import yaml
 
 from .myst_config import (
     find_homepage,
@@ -89,7 +90,7 @@ def load_build_config(config_path):
         print(f"Error: Config file not found: {config_path}")
         sys.exit(1)
 
-    with open(config_path, 'r', encoding='utf-8') as f:
+    with open(config_path, encoding='utf-8') as f:
         config = yaml.safe_load(f)
 
     if 'output' not in config:

@@ -94,6 +94,21 @@ def is_converted_extension(suffix):
 # allow-list is a missing file, which the extension census makes obvious on the
 # very next build -- and extra types can be opted in via `publish_extensions`
 # in the build config, without touching code.
+# Video formats worth publishing at all.
+WEB_VIDEO_EXTENSIONS = frozenset({'.mp4', '.webm', '.mov'})
+
+# Video formats MyST turns into a <video> element. Verified against mystmd
+# 1.6.4: `![](clip.mp4)` renders as <video>, while .mov and .webm both fall
+# through to a broken <img>. Those are published as download links instead --
+# an honest download beats a broken player.
+#
+# iPhone .mov is usually H.264 already, so remuxing to .mp4 would be lossless
+# and cheap, but it needs ffmpeg as a system dependency. Not assumed here.
+INLINE_VIDEO_EXTENSIONS = frozenset({'.mp4'})
+
+# Everything that should render in the page rather than offer a download.
+INLINE_EXTENSIONS = WEB_IMAGE_EXTENSIONS | INLINE_VIDEO_EXTENSIONS
+
 PUBLISHABLE_EXTENSIONS = frozenset({
     # Pages
     '.md', '.ipynb',
@@ -102,8 +117,16 @@ PUBLISHABLE_EXTENSIONS = frozenset({
     # Converted to a renderable format on the way in (see
     # CONVERTED_IMAGE_EXTENSIONS); the original is never published.
     '.tif', '.tiff',
-    # Documents and scientific artifacts offered as download links
+    # Video, played inline
+    *WEB_VIDEO_EXTENSIONS,
+    # Documents and 3D models offered as download links
     '.pdf', '.stl', '.obj', '.ino', '.py',
+    # Bioinformatics artifacts: plasmid maps, alignments, sequences,
+    # phylogenies. No browser renders these, so they are download links -- but
+    # they are primary research output and belong on the site.
+    '.dna', '.aln', '.fa', '.fasta', '.treefile', '.nwk', '.gb', '.genbank',
+    # Tabular data
+    '.csv', '.tsv',
 })
 
 # Files the pipeline writes into staging, or that are placed there by hand as
@@ -126,8 +149,17 @@ def is_publishable_extension(suffix, allowed=None):
 
 
 def is_preserved_staging_name(name):
-    """True if a top-level staging entry must never be pruned as stale"""
-    return name in PRESERVED_STAGING_NAMES
+    """
+    True if a top-level staging entry must never be pruned as stale.
+
+    Anything beginning with `_` or `.` is preserved on principle: EXCLUDED_
+    PREFIXES forbids those from vault content, so nothing this pipeline stages
+    can ever start with them, and anything in staging that does belongs to
+    someone else. That covers `_build` -- MyST's build cache and its theme's
+    node_modules, which a running `myst start` holds open -- as well as
+    `_static`, `.git`, and any artifact a future MyST version invents.
+    """
+    return name in PRESERVED_STAGING_NAMES or name.startswith(('_', '.'))
 
 
 def is_confidential_name(name):

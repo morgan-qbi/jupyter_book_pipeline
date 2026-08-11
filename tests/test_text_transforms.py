@@ -1,13 +1,14 @@
 """Characterization tests: image linebreaks (0b), path normalization (1),
 text cleanup (3)."""
 
+import pytest
+
 from qbi_pipeline.transforms import (
     ensure_image_linebreaks,
     fix_text_issues,
     normalize_markdown_link_urls,
     normalize_notion_folders,
 )
-
 
 # =============================================================================
 # Phase 0b: image linebreaks
@@ -58,13 +59,25 @@ def test_link_text_is_left_untouched():
     assert normalize_markdown_link_urls(src) == "[My Link Text](a_b.md)"
 
 
-def test_external_urls_are_also_rewritten():
-    """KNOWN-WRONG (S-15): URL sanitizing is applied to external links too, so a
-    legitimate %20 in a remote URL is rewritten to an underscore and the link
-    breaks. Should skip http/https/data URIs the way rewrite_absolute_paths does.
-    """
-    src = "[paper](https://example.org/my%20paper.pdf)"
-    assert normalize_markdown_link_urls(src) == "[paper](https://example.org/my_paper.pdf)"
+@pytest.mark.parametrize("url", [
+    "https://example.org/my%20paper.pdf",
+    "http://example.org/a b.html",
+    "mailto:ada@qbi.org",
+    "//cdn.example.org/lib.js",
+    "#section-heading",
+])
+def test_external_urls_are_left_untouched(url):
+    """S-15 regression guard: sanitizing rewrites %20 and spaces to
+    underscores, which is right for a vault path and breaks a remote one."""
+    src = f"[link]({url})"
+    assert normalize_markdown_link_urls(src) == src
+
+
+def test_vault_paths_are_still_sanitized_alongside_external_ones():
+    src = "[a](https://example.org/x%20y.pdf) and [b](my file.png)"
+    out = normalize_markdown_link_urls(src)
+    assert "https://example.org/x%20y.pdf" in out
+    assert "my_file.png" in out
 
 
 # =============================================================================
