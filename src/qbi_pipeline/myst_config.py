@@ -15,9 +15,9 @@ from pathlib import Path
 import yaml
 import uuid
 
-from policy import is_navigable_name
+from .policy import is_navigable_name
 # Re-exported so existing callers and tests keep working.
-from naming import (  # noqa: F401
+from .naming import (  # noqa: F401
     DISPLAY_NAMES,
     get_display_name,
     prettify_folder_name,

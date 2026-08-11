@@ -7,8 +7,8 @@ what actually changed.
 
 import pytest
 
-from build_pipeline import validate_output_path
-from staging import claim_staging_directory, sync_vault
+from qbi_pipeline.cli import validate_output_path
+from qbi_pipeline.staging import claim_staging_directory, sync_vault
 
 
 def write(path, content="content\n"):
@@ -254,7 +254,7 @@ def test_edited_image_is_reprocessed(tmp_path, staging):
 
 
 def test_manifest_is_not_pruned_as_stale(tmp_path, staging):
-    from staging import MANIFEST_NAME
+    from qbi_pipeline.staging import MANIFEST_NAME
 
     v = tmp_path / "vault"
     write(v / "note.md", "text\n")

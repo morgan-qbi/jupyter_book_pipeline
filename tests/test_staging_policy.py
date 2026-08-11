@@ -10,9 +10,9 @@ import sys
 
 import pytest
 
-from policy import PUBLISHABLE_EXTENSIONS
-from preprocessing import build_file_index
-from staging import assert_safe_staging_target, claim_staging_directory, sync_vault
+from qbi_pipeline.policy import PUBLISHABLE_EXTENSIONS
+from qbi_pipeline.index import build_file_index
+from qbi_pipeline.staging import assert_safe_staging_target, claim_staging_directory, sync_vault
 
 
 def write(path, content="content\n"):

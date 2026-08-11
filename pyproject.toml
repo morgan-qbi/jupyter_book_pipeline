@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qbi-pipeline"
+version = "0.5.0"
+description = "Build MyST Jupyter Books from Obsidian research vaults"
+readme = "readme.md"
+requires-python = ">=3.12"
+
+# Pinned exactly: Pillow decodes untrusted images from research vaults, so
+# upgrades should be deliberate and reviewed, not picked up silently.
+# Keep in step with requirements.txt, which the server installs from.
+dependencies = [
+    "PyYAML==6.0.3",
+    "pillow==12.1.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.4",
+    "ruff==0.9.4",
+]
+
+# Installs a real `qbi` command, so builds do not depend on which directory
+# you happen to be standing in.
+[project.scripts]
+qbi = "qbi_pipeline.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = [
+    "E501",  # long lines are a formatting concern, not a lint error
+]

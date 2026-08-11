@@ -7,7 +7,7 @@ inverted here and now guard against regressing it.
 import pytest
 import yaml
 
-from preprocessing import find_frontmatter, has_title, inject_frontmatter
+from qbi_pipeline.transforms import find_frontmatter, has_title, inject_frontmatter
 
 
 def parse_frontmatter(rendered):

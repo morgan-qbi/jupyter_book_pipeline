@@ -8,7 +8,7 @@ GPS coordinates intact.
 import pytest
 from PIL import Image
 
-from preprocessing import MAX_IMAGE_WIDTH, optimize_image, strip_exif
+from qbi_pipeline.transforms import MAX_IMAGE_WIDTH, optimize_image, strip_exif
 
 
 def make_image(path, size=(80, 60), mode="RGB", color=(120, 30, 200), **save_kwargs):
@@ -99,9 +99,9 @@ def test_narrow_images_are_not_upscaled(tmp_path):
 
 def test_oversized_images_are_refused(tmp_path, monkeypatch):
     """Decompression-bomb guard: vault images are untrusted input."""
-    import preprocessing
+    from qbi_pipeline.transforms import images
 
-    monkeypatch.setattr(preprocessing, "MAX_IMAGE_PIXELS", 100)
+    monkeypatch.setattr(images, "MAX_IMAGE_PIXELS", 100)
     path = make_image(tmp_path / "bomb.png", size=(200, 200))
 
     assert optimize_image(path) is False

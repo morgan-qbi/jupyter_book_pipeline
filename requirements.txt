@@ -1,9 +1,13 @@
-# Runtime dependencies.
+# Dependencies are declared in pyproject.toml; this file exists for the
+# server's `pip install -r requirements.txt` workflow. Keep the pins in step.
+#
+# Prefer installing the package itself, which also provides the `qbi` command:
+#     pip install -e .
+#
 # Pinned exactly: Pillow decodes untrusted images from research vaults, so
 # upgrades should be deliberate and reviewed, not picked up silently.
-# Versions match the production venv (Python 3.12.3, /mnt/raid-storage/shared).
 PyYAML==6.0.3
 pillow==12.1.1
 
-# Development / test dependencies.
+# Development / test dependencies (or: pip install -e ".[dev]")
 pytest==8.3.4

@@ -4,7 +4,7 @@ This is the most regex-heavy part of the pipeline and the part most likely to
 shift during the refactor, so it gets the densest coverage.
 """
 
-from preprocessing import convert_obsidian_links, rewrite_absolute_paths
+from qbi_pipeline.transforms import convert_obsidian_links, rewrite_absolute_paths
 
 INDEX = {
     "chart.png": "1_eln/chart.png",

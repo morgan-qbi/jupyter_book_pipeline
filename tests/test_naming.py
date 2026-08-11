@@ -1,15 +1,13 @@
-"""Characterization tests: filename sanitizing and folder-name prettifying.
+"""Tests: filename sanitizing and folder-name prettifying.
 
-These lock in behavior AS IT IS TODAY so Phases 1-3 can move this code without
-silently changing output. Tests marked KNOWN-WRONG document a real defect; they
-get inverted when that finding is fixed.
+These began as characterization tests locking in behavior across the refactor.
+Naming now has exactly one implementation, in qbi_pipeline.naming.
 """
 
 import pytest
 
-import config_generator
-import naming
-import preprocessing
+from qbi_pipeline import myst_config as config_generator
+from qbi_pipeline import naming
 
 
 # =============================================================================
@@ -24,7 +22,7 @@ import preprocessing
     ("", ""),
 ])
 def test_sanitize_filename(raw, expected):
-    assert preprocessing.sanitize_filename(raw) == expected
+    assert naming.sanitize_filename(raw) == expected
 
 
 @pytest.mark.parametrize("raw,expected", [
@@ -34,11 +32,11 @@ def test_sanitize_filename(raw, expected):
     ("Lab Notebook/img%20 1.png", "Lab_Notebook/img__1.png"),
 ])
 def test_sanitize_path_normalizes_separators_and_spaces(raw, expected):
-    assert preprocessing.sanitize_path(raw) == expected
+    assert naming.sanitize_path(raw) == expected
 
 
 # =============================================================================
-# prettify_folder_name — TWO divergent implementations (see S-1 / naming.py)
+# prettify_folder_name — one implementation, shared by every caller
 # =============================================================================
 
 @pytest.mark.parametrize("raw,expected", [
@@ -57,7 +55,9 @@ def test_every_module_shares_one_prettify_implementation():
     diverged were preprocessing's -- it left hyphens alone and returned an
     empty string for all-digit names like a `2025` folder.
     """
-    assert preprocessing.prettify_folder_name is naming.prettify_folder_name
+    from qbi_pipeline import transforms
+
+    assert transforms.prettify_folder_name is naming.prettify_folder_name
     assert config_generator.prettify_folder_name is naming.prettify_folder_name
 
 
@@ -66,7 +66,7 @@ def test_every_module_shares_one_prettify_implementation():
     ("research-biology-la", "Research Biology La"),
 ])
 def test_previously_divergent_cases_now_agree(raw, expected):
-    assert preprocessing.prettify_folder_name(raw) == expected
+    assert naming.prettify_folder_name(raw) == expected
     assert config_generator.prettify_folder_name(raw) == expected
 
 

@@ -26,13 +26,13 @@ import argparse
 import yaml
 from pathlib import Path
 
-from config_generator import (
+from .myst_config import (
     find_homepage,
     generate_multi_vault_config,
     generate_myst_config,
 )
-from policy import PUBLISHABLE_EXTENSIONS
-from staging import (
+from .policy import PUBLISHABLE_EXTENSIONS
+from .staging import (
     assert_safe_staging_target,
     claim_staging_directory,
     render_changes,
@@ -230,42 +230,92 @@ def build_multi_vault(config, dry_run=False):
     return staging_path
 
 
-def main():
+def run_build(args):
+    """`qbi build` — sync vaults into staging and generate myst.yml"""
+    if args.config:
+        build_multi_vault(load_build_config(args.config), dry_run=args.dry_run)
+    elif args.source and args.output:
+        validate_output_path(args.output, [args.source])
+        build_single_vault(args.source, args.output, dry_run=args.dry_run)
+    else:
+        raise ValueError("Provide either --config, or both a source and an output path")
+    return 0
+
+
+def run_audit(args):
+    """`qbi audit` — report vault hygiene issues"""
+    from .audit.report import run_audit_command
+    return run_audit_command(args)
+
+
+def build_parser():
     parser = argparse.ArgumentParser(
-        description='Preprocess Obsidian vaults for MyST',
-        epilog='Examples:\n'
-               '  python build_pipeline.py ../research_biology_la ../_build_staging\n'
-               '  python build_pipeline.py --config qbi_build.yml\n'
-               '  python build_pipeline.py --config qbi_build.yml --dry-run',
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        prog='qbi',
+        description='Build MyST Jupyter Books from Obsidian research vaults',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    subcommands = parser.add_subparsers(dest='command', required=True)
 
-    parser.add_argument('source', nargs='?', default=None,
-                        help='Source vault path (single vault mode)')
-    parser.add_argument('output', nargs='?', default=None,
-                        help='Output staging directory (single vault mode)')
-    parser.add_argument('--config', '-c', type=str, default=None,
-                        help='Path to build config YAML (multi vault mode)')
-    parser.add_argument('--dry-run', '-n', action='store_true',
-                        help='Report what would change without writing anything')
+    build = subcommands.add_parser(
+        'build',
+        help='Sync vaults into the staging directory',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='Examples:\n'
+               '  qbi build ../research-biology-la ../_build_staging\n'
+               '  qbi build --config build_config.yml\n'
+               '  qbi build --config build_config.yml --dry-run',
+    )
+    build.add_argument('source', nargs='?', default=None,
+                       help='Source vault path (single vault mode)')
+    build.add_argument('output', nargs='?', default=None,
+                       help='Output staging directory (single vault mode)')
+    build.add_argument('--config', '-c', default=None,
+                       help='Path to build config YAML (multi vault mode)')
+    build.add_argument('--dry-run', '-n', action='store_true',
+                       help='Report what would change without writing anything')
+    build.set_defaults(handler=run_build)
 
-    args = parser.parse_args()
+    audit = subcommands.add_parser(
+        'audit',
+        help='Report vault hygiene issues',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='Examples:\n'
+               '  qbi audit ../research-biology-la\n'
+               '  qbi audit /mnt/raid-storage/shared --all -d reports/',
+    )
+    audit.add_argument('path', help='Path to a vault, or a parent directory of vaults')
+    audit.add_argument('--all', action='store_true',
+                       help='Treat each subdirectory as a separate vault')
+    audit.add_argument('--output', '-o', help='Write a single report to this file')
+    audit.add_argument('--output-dir', '-d', help='Write per-vault reports to this directory')
+    audit.set_defaults(handler=run_audit)
+
+    return parser
+
+
+def main(argv=None):
+    """
+    Entry point. Returns a process exit code.
+
+    Errors exit non-zero so that a failed build is distinguishable from a clean
+    one by anything scripting this -- cron, CI, or a wrapper (S-12). Previously
+    every failure path printed and returned success.
+    """
+    # Reports and progress output contain non-ASCII; a cp1252 console would
+    # otherwise raise UnicodeEncodeError mid-build.
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+
+    args = build_parser().parse_args(argv)
 
     try:
-        if args.config:
-            build_multi_vault(load_build_config(args.config), dry_run=args.dry_run)
-        elif args.source and args.output:
-            validate_output_path(args.output, [args.source])
-            build_single_vault(args.source, args.output, dry_run=args.dry_run)
-        else:
-            parser.print_help()
-            print("\nError: Provide either --config or both source and output paths")
-            return 1
+        return args.handler(args) or 0
     except ValueError as e:
-        print(f"\nError: {e}")
+        print(f"\nError: {e}", file=sys.stderr)
         return 1
-
-    return 0
+    except KeyboardInterrupt:
+        print("\nInterrupted.", file=sys.stderr)
+        return 130
 
 
 if __name__ == "__main__":

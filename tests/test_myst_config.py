@@ -7,7 +7,7 @@ Phase 3, so this pins its output shape first.
 import pytest
 import yaml
 
-from config_generator import (
+from qbi_pipeline.myst_config import (
     build_site_config,
     find_homepage,
     scan_chapter_contents,

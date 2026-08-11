@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Changed
+- **Installable package with a `qbi` command.** Code moved under
+  `src/qbi_pipeline/`; install with `pip install -e .`. The entry point is now
+  `qbi build` / `qbi audit` rather than `python build_pipeline.py` and
+  `python vault_audit.py`.
+- Transforms are split one module per phase (`frontmatter`, `paths`, `links`,
+  `text`, `images`) as pure functions, and auditing is split into `checks` and
+  `report`.
+- Text cleanup is **code-aware**: fenced blocks and inline code spans are left
+  byte-for-byte intact, so `@decorator` and string literals inside code are no
+  longer rewritten. Escaping `@` in prose is unchanged and intended — MyST
+  reads a bare `@` as the start of a citation reference.
+- Failures exit non-zero and report to stderr, so a failed build is
+  distinguishable from a clean one by cron or CI.
 - **Staging is now synced incrementally instead of deleted and rebuilt.** Only
   new and changed files are written, and files that no longer exist in a vault
   are pruned. The staging directory can therefore be kept under version

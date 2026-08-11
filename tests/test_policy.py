@@ -10,10 +10,9 @@ import sys
 
 import pytest
 
-import config_generator
-import preprocessing
-import vault_audit
-from policy import (
+from qbi_pipeline import myst_config as config_generator
+from qbi_pipeline.audit import checks as vault_audit
+from qbi_pipeline.policy import (
     EXCLUDED_DIRS,
     NON_NAVIGABLE_DIRS,
     QBI_EXCLUDE_MARKER,
@@ -187,7 +186,9 @@ def test_traversal_does_not_follow_directory_symlinks(vault, tmp_path):
 def test_all_three_modules_share_one_exclusion_implementation():
     """The whole point of policy.py. vault_audit's own copy used to omit the
     confidential rule, so audit reports named files inside 5_* folders."""
-    assert preprocessing.iter_vault_files is iter_vault_files
+    from qbi_pipeline import index
+
+    assert index.iter_vault_files is iter_vault_files
     assert vault_audit.iter_vault_files is iter_vault_files
     assert config_generator.should_skip_dir("5_confidential") is True
 

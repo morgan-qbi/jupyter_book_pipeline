@@ -1,7 +1,7 @@
 """Characterization tests: image linebreaks (0b), path normalization (1),
 text cleanup (3)."""
 
-from preprocessing import (
+from qbi_pipeline.transforms import (
     ensure_image_linebreaks,
     fix_text_issues,
     normalize_markdown_link_urls,
@@ -79,14 +79,38 @@ def test_escapes_at_signs():
     assert fix_text_issues("measured @50 mT") == "measured \\@50 mT"
 
 
-def test_escapes_at_signs_inside_fenced_code_blocks():
-    """KNOWN-WRONG (S-9): the @ escape is applied to the whole document, so it
-    corrupts Python decorators, emails and citations inside code fences.
-    """
+def test_leaves_fenced_code_blocks_untouched():
+    """S-9 regression guard: the @ escape used to be applied to the whole
+    document, turning a Python decorator into `\\@dataclass`."""
     src = "```python\n@dataclass\nclass X: pass\n```\n"
-    assert fix_text_issues(src) == "```python\n\\@dataclass\nclass X: pass\n```\n"
+    assert fix_text_issues(src) == src
+
+
+def test_leaves_tilde_fences_untouched():
+    src = "~~~python\n@property\ndef x(self): ...\n~~~\n"
+    assert fix_text_issues(src) == src
+
+
+def test_leaves_inline_code_untouched():
+    assert fix_text_issues("use `@dataclass` here") == "use `@dataclass` here"
+
+
+def test_leaves_dashes_inside_code_untouched():
+    """Dash normalization would otherwise silently edit string literals."""
+    src = "```\nprint('range 10–20')\n```\n"
+    assert fix_text_issues(src) == src
+
+
+def test_still_escapes_prose_around_a_code_block():
+    src = "email ada@qbi.org\n\n```\n@decorator\n```\n\nmore @ text\n"
+    out = fix_text_issues(src)
+
+    assert "ada\\@qbi.org" in out
+    assert "```\n@decorator\n```" in out
+    assert "more \\@ text" in out
 
 
 def test_escapes_at_signs_in_email_addresses():
-    """KNOWN-WRONG (S-9): same root cause, visible in rendered prose."""
+    """Intended behavior: MyST reads a bare @ as the start of a citation
+    reference, so prose must escape it to render literally."""
     assert fix_text_issues("contact ada@qbi.org") == "contact ada\\@qbi.org"

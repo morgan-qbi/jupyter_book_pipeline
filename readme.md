@@ -49,23 +49,52 @@ Planned enhancements focus on deeper automation, FAIR compliance, and usability 
 
 ## Setup
 ```bash
-pip install pyyaml pillow
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -e .            # add [dev] for the test suite: pip install -e ".[dev]"
 npm install -g mystmd
 ```
 
+This installs a `qbi` command. Editable mode (`-e`) links to the working copy,
+so code changes take effect without reinstalling.
+
 ## Usage
 ```bash
-cd qbi_pipeline
+# Multi vault (the normal case)
+qbi build --config build_config.yml
 
-# With specific vault path
-python build_pipeline.py ../path/to/vault
+# Single vault
+qbi build ../path/to/vault ../_build_staging
 
-# Or use default
-python build_pipeline.py
+# Preview what would change, writing nothing
+qbi build --config build_config.yml --dry-run
 
-cd ../_build_staging
-myst start
+# Vault hygiene report
+qbi audit ../path/to/vault
+qbi audit /mnt/raid-storage/shared --all -d reports/
+
+cd _build_staging && myst start
 ```
+
+See [build_config.example.yml](./build_config.example.yml) for the config
+format, the publication allow-list, and how to keep content off the site.
+
+## How publishing is decided
+
+The site is public, so the pipeline publishes **by permission, not by omission**.
+
+- Only allow-listed file types are staged. Every build prints a per-vault
+  **extension census** of what was published and what was skipped, and warns
+  when a page links to a file the allow-list left out. Add types via
+  `publish_extensions` in the build config.
+- Folders named `5_*` are confidential by convention, and a `.qbi-exclude` file
+  excludes the folder it sits in plus everything beneath it. Both rules are
+  enforced identically in staging, navigation and audit reports.
+- Staging is **synced, not rebuilt**: only changed files are written, and files
+  removed from a vault are pruned. The staging directory can therefore be kept
+  under version control, and `git status` there shows exactly what a build
+  changed.
+
+Source vaults are never modified.
 
 ## Changelog
 See [CHANGELOG.md](./CHANGELOG.md)

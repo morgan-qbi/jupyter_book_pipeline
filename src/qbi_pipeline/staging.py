@@ -24,8 +24,8 @@ import shutil
 from collections import Counter
 from pathlib import Path
 
-from naming import sanitize_relative_path
-from policy import (
+from .naming import sanitize_relative_path
+from .policy import (
     PRESERVED_STAGING_NAMES,
     PUBLISHABLE_EXTENSIONS,
     STAGING_MARKER,
@@ -34,7 +34,8 @@ from policy import (
     is_publishable_extension,
     iter_vault_files,
 )
-from preprocessing import build_file_index, optimize_image, process_markdown_content
+from .index import build_file_index
+from .transforms import optimize_image, process_markdown_content
 
 
 class ExtensionCensus:
