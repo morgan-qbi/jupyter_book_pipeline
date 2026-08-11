@@ -35,13 +35,38 @@ def apply_outside_code(content, transform):
     return ''.join(out)
 
 
+def _split_inline_images(text):
+    """Push images that share a line with text onto a line of their own"""
+    # Anything other than whitespace before an image on the same line makes
+    # MyST render it inline -- a thumbnail in the flow of the paragraph rather
+    # than a figure. Allow spaces between the text and the image: requiring the
+    # text to sit flush against the embed missed the common
+    # `Analysed the run. ![[plot.png]]` case entirely.
+    #
+    # `[` is excluded from the preceding character on purpose. In
+    # `[![badge](img.svg)](https://example.org)` the image is the *content* of
+    # a link, and splitting it would tear the link syntax apart. Those images
+    # are meant to be inline.
+    lines = []
+    for line in text.split('\n'):
+        # A table cell image is deliberately inline; splitting breaks the table.
+        if line.lstrip().startswith('|'):
+            lines.append(line)
+        else:
+            lines.append(re.sub(r'([^\s\[])[ \t]*(!\[)', r'\1\n\n\2', line))
+    return '\n'.join(lines)
+
+
 def ensure_image_linebreaks(content):
     """Ensure images render as blocks, not inline"""
-    # If there's text immediately before ![[, split it to a new line
-    content = re.sub(r'(\S)(\!\[\[)', r'\1\n\n\2', content)
-    # Ensure blank line before ![[ even if already on own line (e.g. inside lists)
+    # Code blocks are left alone: an example that shows markdown syntax should
+    # keep the layout it was written with.
+    content = apply_outside_code(content, _split_inline_images)
+
+    # Ensure a blank line before an image that is already on its own line
+    # (e.g. indented inside a list), or it still gets absorbed into the
+    # preceding paragraph.
     content = re.sub(r'(?<!\n)\n([ \t]*\!\[\[)', r'\n\n\1', content)
-    # Same for standard markdown images
     content = re.sub(r'(?<!\n)\n([ \t]*!\[)', r'\n\n\1', content)
     return content
 

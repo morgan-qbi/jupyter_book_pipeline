@@ -127,3 +127,53 @@ def test_escapes_at_signs_in_email_addresses():
     """Intended behavior: MyST reads a bare @ as the start of a citation
     reference, so prose must escape it to render literally."""
     assert fix_text_issues("contact ada@qbi.org") == "contact ada\\@qbi.org"
+
+
+# =============================================================================
+# Inline images  (the "tiny image" problem)
+# =============================================================================
+
+def test_splits_text_separated_from_embed_by_a_space():
+    """The common real-world case: prose, a space, then an embed. Requiring the
+    text to sit flush against the embed missed all of these, and they render as
+    thumbnails in the paragraph rather than as figures."""
+    out = ensure_image_linebreaks("Analysed the run. ![[plot.png]]")
+    assert out == "Analysed the run.\n\n![[plot.png]]"
+
+
+def test_splits_standard_markdown_image_after_text():
+    out = ensure_image_linebreaks("Results so far. ![](attachments/plot.png)")
+    assert out == "Results so far.\n\n![](attachments/plot.png)"
+
+
+def test_splits_image_trailing_a_list_item():
+    out = ensure_image_linebreaks("* Magnetofluorescence at 50 mT ![](plot.png)")
+    assert out == "* Magnetofluorescence at 50 mT\n\n![](plot.png)"
+
+
+def test_does_not_split_a_badge_link():
+    """`[![alt](img)](href)` is an image inside a link. Splitting it tears the
+    link syntax apart, and those images are meant to be inline."""
+    src = "[![License: MIT](https://img.shields.io/badge/License-MIT.svg)](https://opensource.org/licenses/MIT)"
+    assert ensure_image_linebreaks(src) == src
+
+
+def test_does_not_split_a_badge_link_following_text():
+    src = "Build status [![badge](b.svg)](https://ci.example.org)"
+    assert ensure_image_linebreaks(src) == src
+
+
+def test_does_not_split_images_inside_table_rows():
+    """A table cell image is deliberately inline; splitting breaks the table."""
+    src = "| sample | image |\n| --- | --- |\n| A | ![](a.png) |\n"
+    assert ensure_image_linebreaks(src) == src
+
+
+def test_does_not_touch_images_inside_code_blocks():
+    src = "```markdown\nSee this. ![[example.png]]\n```\n"
+    assert ensure_image_linebreaks(src) == src
+
+
+def test_multiple_images_on_one_line_each_get_their_own():
+    out = ensure_image_linebreaks("A ![](x.png) B ![](y.png)")
+    assert out == "A\n\n![](x.png) B\n\n![](y.png)"
