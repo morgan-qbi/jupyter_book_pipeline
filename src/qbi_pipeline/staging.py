@@ -24,9 +24,10 @@ import shutil
 from collections import Counter
 from pathlib import Path
 
-from .naming import sanitize_relative_path
+from .naming import staged_relative_path
 from .policy import (
     PRESERVED_STAGING_NAMES,
+    is_converted_extension,
     PUBLISHABLE_EXTENSIONS,
     STAGING_MARKER,
     WEB_IMAGE_EXTENSIONS,
@@ -35,7 +36,7 @@ from .policy import (
     iter_vault_files,
 )
 from .index import build_file_index
-from .transforms import optimize_image, process_markdown_content
+from .transforms import convert_image, optimize_image, process_markdown_content
 
 
 class ExtensionCensus:
@@ -230,6 +231,27 @@ def copy_asset_if_changed(source, output_path, staged_relative, manifest):
     return True
 
 
+def convert_asset_if_changed(source, output_path, staged_relative, manifest):
+    """
+    Convert an asset into staging only when its source has changed.
+
+    Mirrors copy_asset_if_changed, but the staged file is a different format
+    and filename, so only the manifest can say whether it is current.
+    """
+    source = Path(source)
+    output_path = Path(output_path)
+    signature = source_signature(source)
+
+    if output_path.exists() and manifest.get(staged_relative) == signature:
+        return False
+
+    if not convert_image(source, output_path):
+        return False
+
+    manifest[staged_relative] = signature
+    return True
+
+
 def is_valid_notebook(path):
     """True if a .ipynb file parses as JSON"""
     try:
@@ -298,7 +320,7 @@ def sync_vault(source_path, staging_path, allowed_extensions=None, dry_run=False
 
     for item, relative_path in iter_vault_files(source_path, stats=traversal_stats):
         suffix = item.suffix.lower()
-        staged_relative = sanitize_relative_path(relative_path)
+        staged_relative = staged_relative_path(relative_path)
 
         # A symlinked file resolves to content outside the vault, which the
         # vault owner never reviewed. Refuse rather than dereference (S-3).
@@ -341,6 +363,11 @@ def sync_vault(source_path, staging_path, allowed_extensions=None, dry_run=False
                 content, staged_relative, file_index, path_set, unpublished
             )
             changed = write_if_changed(output_path, content)
+        elif is_converted_extension(suffix):
+            # Re-encoded into a browser-renderable format under a new name;
+            # the source is compared via the manifest, not the staged file,
+            # since the two can never match byte-for-byte.
+            changed = convert_asset_if_changed(item, output_path, staged_relative, manifest)
         else:
             changed = copy_asset_if_changed(item, output_path, staged_relative, manifest)
             if changed and output_path.suffix.lower() in WEB_IMAGE_EXTENSIONS:

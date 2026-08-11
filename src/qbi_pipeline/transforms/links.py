@@ -5,10 +5,11 @@ Turns `![[...]]` embeds into standard markdown, resolving them against the
 vault index, and rewrites absolute image paths as relative ones.
 """
 
+import posixpath
 import re
 from pathlib import Path
 
-from ..naming import get_relative_path, sanitize_filename, sanitize_path
+from ..naming import get_relative_path, sanitize_filename, staged_relative_path
 from ..policy import WEB_IMAGE_EXTENSIONS
 
 def convert_obsidian_links(content, current_file, file_index, path_set, unpublished=None):
@@ -41,10 +42,12 @@ def convert_obsidian_links(content, current_file, file_index, path_set, unpublis
 
         # Explicit path provided
         if '/' in raw_reference or '\\' in raw_reference:
-            sanitized_path = sanitize_path(raw_reference)
-            filename = Path(raw_reference).name
-            ext = Path(raw_reference).suffix.lower()
-            
+            # Resolve against where the file lands in staging, not where it sits
+            # in the vault: converted formats are renamed on the way in.
+            sanitized_path = staged_relative_path(raw_reference)
+            filename = Path(sanitized_path).name
+            ext = Path(sanitized_path).suffix.lower()
+
             # First, check if this is an absolute path from vault root
             if sanitized_path in path_set:
                 # Rewrite as relative path from current file
@@ -85,7 +88,9 @@ def convert_obsidian_links(content, current_file, file_index, path_set, unpublis
             file_path = file_path[0]
         
         rel_path = get_relative_path(current_file, file_path)
-        ext = Path(raw_reference).suffix.lower()
+        # The staged extension decides embed-vs-download: a .tif is published as
+        # a .png and must render inline, not offer itself as a download.
+        ext = Path(file_path).suffix.lower()
         warn_if_unpublished(file_path, raw_reference)
 
         if ext in WEB_IMAGE_EXTENSIONS:
@@ -96,27 +101,61 @@ def convert_obsidian_links(content, current_file, file_index, path_set, unpublis
     return re.sub(pattern, replacement, content)
 
 
-def rewrite_absolute_paths(content, current_file, path_set):
+def rewrite_absolute_paths(content, current_file, path_set, file_index=None):
     """
-    Check standard markdown image links for absolute paths and rewrite as relative.
+    Resolve standard markdown image links against the vault.
+
+    Obsidian does not require link paths to be correct relative to the page
+    they sit on -- it resolves them by searching the vault, so a note in
+    `2025/` can write `attachments/plot.png` for a file that actually lives in
+    the parent folder's `attachments/`. Those paths are wrong as literal
+    relative links and the image silently fails to render once published.
+
+    Three resolutions are tried, in order of how confident we can be:
+
+    1. an exact vault-root path -> rewritten relative to this page
+    2. already correct relative to this page -> left alone
+    3. otherwise, a vault-wide lookup on the filename, which is what Obsidian
+       itself would have done
     """
     pattern = r'!\[([^\]]*)\]\(([^)]+)\)'
-    
+
     def replacement(match):
         alt_text = match.group(1)
         url = match.group(2)
-        
+
         # Skip external URLs
         if url.startswith(('http://', 'https://', 'data:')):
             return match.group(0)
-        
-        sanitized_url = sanitize_path(url)
-        
-        # Check if this is an absolute path from vault root
+
+        # Resolve to the staged name, so a standard markdown link to a
+        # converted format points at the file staging actually holds.
+        sanitized_url = staged_relative_path(url)
+
+        # 1. An absolute path from the vault root.
         if sanitized_url in path_set:
-            # Rewrite as relative from current file
-            sanitized_url = get_relative_path(current_file, sanitized_url)
-        
+            return f'![{alt_text}]({get_relative_path(current_file, sanitized_url)})'
+
+        # 2. Already correct relative to this page.
+        current_dir = posixpath.dirname(str(current_file).replace('\\', '/'))
+        candidate = posixpath.normpath(
+            posixpath.join(current_dir, sanitized_url) if current_dir else sanitized_url
+        )
+        if candidate in path_set:
+            return match.group(0)
+
+        # 3. Fall back to a vault-wide filename lookup.
+        if file_index:
+            target = file_index.get(sanitize_filename(posixpath.basename(sanitized_url)))
+            if isinstance(target, list):
+                print(
+                    f"Warning: {current_file} references {url}, and several files "
+                    f"share that name; using {target[0]}"
+                )
+                target = target[0]
+            if target:
+                return f'![{alt_text}]({get_relative_path(current_file, target)})'
+
         return f'![{alt_text}]({sanitized_url})'
-    
+
     return re.sub(pattern, replacement, content)

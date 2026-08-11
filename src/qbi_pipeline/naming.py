@@ -46,6 +46,25 @@ def sanitize_relative_path(relative_path):
     return str(sanitized).replace('\\', '/')
 
 
+def staged_relative_path(relative_path):
+    """
+    Where a vault file lands in staging: sanitized, and with its extension
+    rewritten if the format is converted on the way in (e.g. .tif -> .png).
+
+    Everything that resolves a link must go through this, so that a reference
+    to `scan.tif` points at the `scan.png` staging actually contains.
+    """
+    from .policy import staged_suffix
+
+    sanitized = sanitize_relative_path(relative_path)
+    path = Path(sanitized)
+    new_suffix = staged_suffix(path.suffix)
+
+    if new_suffix == path.suffix:
+        return sanitized
+    return str(path.with_suffix(new_suffix)).replace('\\', '/')
+
+
 def get_relative_path(from_file, to_file):
     """Calculate relative path from one file to another"""
     from_dir = Path(from_file).parent

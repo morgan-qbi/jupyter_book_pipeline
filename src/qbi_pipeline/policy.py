@@ -58,6 +58,29 @@ WEB_IMAGE_EXTENSIONS = frozenset({
 # renderable set.
 IMAGE_EXTENSIONS = WEB_IMAGE_EXTENSIONS | frozenset({'.tiff', '.tif'})
 
+# Image formats no browser renders inline, but which convert cleanly to one
+# that does. These are published as the converted format under a rewritten
+# filename -- microscopy TIFFs are the case that matters.
+#
+# The rename has to be applied when the vault is indexed, not just when files
+# are copied: Obsidian embeds reference a bare filename with no path, so a
+# lookup for `scan.tif` must resolve to the `scan.png` that staging actually
+# contains, or every such link breaks.
+CONVERTED_IMAGE_EXTENSIONS = {
+    '.tif': '.png',
+    '.tiff': '.png',
+}
+
+
+def staged_suffix(suffix):
+    """The extension a file takes in staging, after any format conversion"""
+    return CONVERTED_IMAGE_EXTENSIONS.get(suffix.lower(), suffix)
+
+
+def is_converted_extension(suffix):
+    """True if this format is re-encoded on the way into staging"""
+    return suffix.lower() in CONVERTED_IMAGE_EXTENSIONS
+
 # ---------------------------------------------------------------------------
 # Publication allow-list
 # ---------------------------------------------------------------------------
@@ -76,6 +99,9 @@ PUBLISHABLE_EXTENSIONS = frozenset({
     '.md', '.ipynb',
     # Inline images
     *WEB_IMAGE_EXTENSIONS,
+    # Converted to a renderable format on the way in (see
+    # CONVERTED_IMAGE_EXTENSIONS); the original is never published.
+    '.tif', '.tiff',
     # Documents and scientific artifacts offered as download links
     '.pdf', '.stl', '.obj', '.ino', '.py',
 })

@@ -105,6 +105,20 @@ The report contains status glyphs a cp1252 console cannot encode, and the module
 **S-18 — Optimized images were re-copied and re-encoded on every build.** — ✅ **FIXED** (Phase 2)
 Found by end-to-end verification, not by tests: a no-op rebuild still reported files written. Optimization rewrites the staged copy, so a resized, metadata-stripped image can never match its source, and comparing the two marked every image as changed on every run. `git status` stayed clean because optimization is deterministic, which is exactly why it would have gone unnoticed — but every build re-encoded every JPEG, and repeated lossy re-encoding degrades quality cumulatively. A `.qbi-manifest.json` records each source's size and mtime, making the check exact.
 
+**S-19 — Obsidian's loose link paths break once published.** — ✅ **FIXED**
+Obsidian resolves a link by *searching* the vault, not by treating the path as literally relative to the page. A note in `2025/` can write `attachments/plot.png` for a file that actually lives in the parent folder's `attachments/`; it renders fine in Obsidian and 404s on the site. Wikilinks already had a vault-wide fallback, but standard markdown images did not.
+
+`rewrite_absolute_paths` now tries three resolutions in order: exact vault-root path, already-correct-relative, then a vault-wide filename lookup — the last being what Obsidian itself would do.
+
+Found only by running a real vault: **33 of 225 image references were broken this way**, and none of the synthetic fixtures reproduced it.
+
+**S-20 — TIFFs could not be published at all.** — ✅ **FIXED** (feature)
+No browser renders TIFF inline, so microscopy images were either skipped or emitted as broken `<img>` tags. They are now converted to PNG on the way into staging.
+
+The conversion renames the file, and that rename has to reach every place a link is resolved — Obsidian embeds carry a bare filename with no path, so the rename is applied when the vault is **indexed**, not when files are copied. `build_file_index` therefore keys on the vault name (`scan.tif`) and stores the staged path (`scan.png`).
+
+16-bit and float TIFFs are rescaled to 8-bit for display, which is lossy in the measurement sense: it maps the image's own min..max onto 0..255. Fine to look at, **not** to read quantitatively. The original stays in the vault untouched. Multi-page TIFFs keep the first frame, with a note in the build log.
+
 ### ✅ Cleared
 
 Full 13-commit history reviewed — every blob is a small source file. **No secrets or large binaries have ever been committed.** History is clean; no rewrite required.
@@ -227,4 +241,52 @@ The census reports skipped extensions grouped and sorted by count, counts files 
 - **S-12 (rest)** — structured logging.
 - **S-1 (rest)** — fail-open naming rule; needs D-2 option 3.
 - **Phase 4** — CI running tests and ruff.
-- **Run a real vault through it.** The synthetic fixtures are small and tidy; a real vault has the Notion artifacts, duplicate filenames and large images that actually break things. S-18 surfaced end-to-end, not in tests.
+- ~~Run a real vault through it.~~ **Done.** See below.
+
+
+---
+
+## 7. Real-vault run (research-biology-la)
+
+8160 files in, 1003 staged. The vendored virtualenv inside
+`3_code_bacterioscope/Revised_experiment_code` (2427 `.py`, 2285 `.pyc`,
+`.dist-info`, `.pyd`) was correctly excluded by policy.
+
+**MyST built cleanly: 63 HTML pages, zero errors.** Remaining MyST warnings are
+all content-level (Notion frontmatter keys, empty link text, a legacy link
+target), not pipeline failures.
+
+**Link verification: 225 image references, 0 broken** after S-19. Before the
+fix, 33 were broken.
+
+Two findings came only from this run — S-19 and S-18 both surfaced end-to-end
+rather than in tests. Worth remembering that the synthetic fixtures are too
+tidy to catch this class of bug.
+
+### Decisions waiting on you
+
+13 non-image links point at file types the allow-list skips. These are
+publication decisions, not bugs:
+
+| Type | Count | What it is |
+| --- | --- | --- |
+| `.dna` | 2 | plasmid maps (SnapGene) |
+| `.mov` / `.mp4` | 4 | experiment videos |
+| `.csv` | 2 | phylogenetic tree data |
+| `.aln`, `.fa`, `.treefile` | 3 | sequence alignments and phylogenies |
+| `LICENSE` | 1 | no extension, so never matched |
+
+The sequence and plasmid formats look like exactly the research artifacts worth
+publishing as downloads. Add to `publish_extensions` to include them.
+
+Two genuine vault-content problems, which `qbi audit` reports:
+
+- 6 `Pasted image NNN.png` references with no matching file in the vault
+- one link written relative to the project root rather than the page
+  (`3_code_bacterioscope/Operation_test/systematic_calibration.ipynb`)
+
+### Still open
+
+Non-image markdown links (`[text](path)`) do not get the S-19 search fallback —
+only images do. The one broken `.ipynb` link above would be fixed by extending
+it.

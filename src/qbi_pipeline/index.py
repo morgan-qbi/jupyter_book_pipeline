@@ -9,22 +9,28 @@ is wider than what may be *published* -- link conversion needs to know a file
 exists in order to warn that a page references something the allow-list skipped.
 """
 
-from .naming import sanitize_filename, sanitize_relative_path
+from .naming import sanitize_filename, staged_relative_path
 from .policy import iter_vault_files
+
 
 def build_file_index(source_path):
     """
     Build indices for file lookup.
-    
+
     Returns:
-        file_index: dict mapping sanitized filename -> relative path (for vault-wide lookup)
-        path_set: set of all sanitized full paths (for O(1) existence checks)
+        file_index: sanitized *vault* filename -> *staged* relative path
+        path_set:   every staged relative path, for O(1) existence checks
+
+    Keys are the names as written in the vault; values are where the file
+    actually lands in staging. Those differ whenever a format is converted on
+    the way in, so a `![[scan.tif]]` embed -- which carries no path at all --
+    resolves to the `scan.png` that staging contains.
     """
     file_index = {}
     path_set = set()
 
     for item, relative_path in iter_vault_files(source_path):
-        sanitized_path_str = sanitize_relative_path(relative_path)
+        sanitized_path_str = staged_relative_path(relative_path)
         sanitized_filename = sanitize_filename(item.name)
 
         # Add to path set for O(1) "does this path exist" checks

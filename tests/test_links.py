@@ -97,3 +97,52 @@ def test_external_image_urls_are_skipped():
     for url in ("https://example.org/a b.png", "http://example.org/x.png", "data:image/png;base64,AAA"):
         src = f"![alt]({url})"
         assert rewrite_absolute_paths(src, "notes.md", PATHS) == src
+
+
+# =============================================================================
+# Obsidian-style loose paths in standard markdown images
+# =============================================================================
+
+def test_markdown_image_path_wrong_for_this_page_is_resolved_by_search(tmp_path):
+    """Obsidian resolves link paths by searching the vault, not by treating
+    them as literal relative paths. A note in 2025/ can write
+    `attachments/plot.png` for a file in the *parent* folder's attachments,
+    which renders fine in Obsidian and 404s once published.
+
+    Found by running a real vault through the pipeline: 33 of 225 image
+    references were broken this way.
+    """
+    index = {"plot.png": "eln/attachments/plot.png"}
+    paths = {"eln/attachments/plot.png"}
+
+    out = rewrite_absolute_paths(
+        "![](attachments/plot.png)", "eln/2025/2025_06.md", paths, index
+    )
+    assert out == "![](../attachments/plot.png)"
+
+
+def test_correct_relative_path_is_left_alone(tmp_path):
+    index = {"plot.png": "eln/2025/attachments/plot.png"}
+    paths = {"eln/2025/attachments/plot.png"}
+
+    src = "![](attachments/plot.png)"
+    assert rewrite_absolute_paths(src, "eln/2025/note.md", paths, index) == src
+
+
+def test_vault_root_path_still_wins_over_search(tmp_path):
+    index = {"plot.png": "elsewhere/plot.png"}
+    paths = {"1_eln/plot.png", "elsewhere/plot.png"}
+
+    out = rewrite_absolute_paths("![](1_eln/plot.png)", "2_data/note.md", paths, index)
+    assert out == "![](../1_eln/plot.png)"
+
+
+def test_unresolvable_image_path_is_left_as_written(tmp_path):
+    out = rewrite_absolute_paths("![](attachments/ghost.png)", "note.md", set(), {})
+    assert out == "![](attachments/ghost.png)"
+
+
+def test_search_fallback_is_skipped_without_an_index():
+    """Back-compat: the index argument is optional."""
+    src = "![](attachments/plot.png)"
+    assert rewrite_absolute_paths(src, "eln/note.md", set()) == src
