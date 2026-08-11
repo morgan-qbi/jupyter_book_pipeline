@@ -252,13 +252,27 @@ def convert_asset_if_changed(source, output_path, staged_relative, manifest):
 
 
 def is_valid_notebook(path):
-    """True if a .ipynb file parses as JSON"""
+    """
+    True if a .ipynb file is a notebook MyST can actually read.
+
+    Parsing as JSON is not enough. A file containing `{}` is valid JSON and
+    passes that check, then fails the MyST build with an unhelpful
+    `Cannot read properties of undefined (reading 'length')` -- and because
+    MyST exits non-zero, one malformed notebook takes down the whole site.
+    Checking for the minimum notebook shape here turns a site-wide failure into
+    one skipped file and a warning.
+    """
     try:
         with open(path, encoding='utf-8') as f:
-            json.load(f)
-        return True
+            notebook = json.load(f)
     except (json.JSONDecodeError, ValueError, UnicodeDecodeError, OSError):
         return False
+
+    return (
+        isinstance(notebook, dict)
+        and isinstance(notebook.get('cells'), list)
+        and 'nbformat' in notebook
+    )
 
 
 def prune_stale_files(staging_path, expected, dry_run=False):

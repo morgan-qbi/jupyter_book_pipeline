@@ -302,3 +302,29 @@ def test_ordinary_stale_content_is_still_pruned(vault, staging):
 
     assert not (staging / "old_page.md").exists()
     assert not (staging / "chapter" / "old.md").exists()
+
+
+# =============================================================================
+# Notebook validity
+# =============================================================================
+
+@pytest.mark.parametrize("content,valid", [
+    ('{"cells": [], "nbformat": 4, "nbformat_minor": 5}', True),
+    ('{}', False),                       # valid JSON, not a notebook
+    ('{"cells": []}', False),            # no nbformat
+    ('{"nbformat": 4}', False),          # no cells
+    ('{"cells": "not a list", "nbformat": 4}', False),
+    ('[]', False),                       # JSON, but not an object
+    ('not json at all', False),
+])
+def test_notebook_validity(tmp_path, staging, content, valid):
+    """A file that is valid JSON but not a valid notebook used to reach MyST
+    and fail the whole site build with `Cannot read properties of undefined`.
+    MyST exits non-zero, so one bad notebook took everything down."""
+    v = tmp_path / "vault"
+    write(v / "nb.ipynb", content)
+
+    census, changes = sync_vault(v, staging)
+
+    assert (staging / "nb.ipynb").exists() is valid
+    assert changes["skipped_invalid"] == (0 if valid else 1)
