@@ -48,5 +48,7 @@ audit_reports/
 /research-*/
 /*_vault/
 
-# --- Working documents ---
-REFACTOR_PLAN.md
+# --- Editor ---
+# Local interpreter selection is machine-specific: this checkout uses .venv on
+# Windows, the server uses venv/ on Linux. Not shared.
+.vscode/
