@@ -205,6 +205,26 @@ Raised in passing and never started. Listed so they are not lost.
 - OCR/HTR for handwritten lab notebook scans — needs handwriting recognition
   rather than classical OCR, plus a human review step
 - LaTeX source sharing for micropublications
+- **Provenance history for the ELNs: Syncthing plus commits on a timer.**
+  Syncthing gives each scientist a local replica of their vault; a timer then
+  commits each vault hourly, or at end of day, so there is a record of when
+  every section changed.
+
+  Deliberately *not* the Obsidian Git plugin, and deliberately no human in the
+  commit loop. Anything that depends on a researcher remembering to commit or
+  push does not happen — that is an observation about how people actually work,
+  not a complaint about them.
+
+  This must live outside this pipeline. The build never writes to a vault, and
+  that invariant is the reason it is safe to run unattended against the research
+  share: a wrong path can cost you staging, never someone's data. Vault-side
+  commits need their own mechanism on their own schedule.
+
+  Two things that already work in our favour when a vault becomes a git repo:
+  `.git` is in `EXCLUDED_DIRS` (`policy.py`), and Syncthing's `.stfolder` /
+  `.stversions` / `.stignore` all begin with `.`, which `EXCLUDED_PREFIXES`
+  excludes. So neither the repo metadata nor the sync metadata reaches the site
+  without any change here.
 
 ---
 
