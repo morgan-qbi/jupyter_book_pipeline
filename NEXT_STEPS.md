@@ -34,13 +34,15 @@ of the design decisions — particularly before changing the exclusion rules.
 ## 1. Push to GitHub
 
 Unblocked. The repo is public and has been checked: no credentials, no server
-layout, no vault contents. The one thing left is a decision you already made and
-may want to re-confirm with fresh eyes:
+layout, no vault contents.
 
-- [ ] **`.csv` publishes by default.** You asked for this so phylogenetics data
-      reaches the site. The tradeoff is that a `grant_budget.csv` dropped into a
-      vault would also reach the site, with `5_*` folders and `.qbi-exclude` as
-      the only things stopping it. Still what you want?
+- [x] **`.csv` publishes by default — re-confirmed 2026-08-25.** Reviewed with
+      the tradeoff in view and kept deliberately: publishing the data is worth
+      more than withholding it. A `grant_budget.csv` dropped into a vault would
+      also reach the site, and `5_*` folders plus `.qbi-exclude` are the only
+      things stopping it — the decision rests on researchers knowing that
+      nothing sensitive belongs in `1_` through `4_`. That is a briefing, not a
+      control; see "naming rules fail open" in section 5.
 - [ ] `git push origin main`
 
 If you ever want `.csv` off again, remove it from `PUBLISHABLE_EXTENSIONS` in
