@@ -83,6 +83,36 @@ Then, in order:
 - [ ] Only then `systemctl enable --now qbi-build.timer`.
 - [ ] Check `journalctl -u qbi-build.service` after the first timed run.
 
+### Carried over from the pre-refactor deployment
+
+Recovered from the v0.4.0 history that was on GitHub (the March 2026 work, now
+preserved on the `legacy/pre-refactor-main` branch). This refactor branched
+before it, so none of it is encoded here — and it cannot be, because the MyST
+service unit itself does not live in this repo. Both were learned the hard way
+on the running server:
+
+- [ ] **Do not pass `--headless` to `myst start`.** As of MyST v1.8.0 the flag
+      makes it silently skip starting the app server. The unit looks healthy
+      and the site does not serve.
+- [ ] **Empty or truncated `.ipynb` files put MyST into an infinite rebuild
+      loop.** The watcher fails to parse, retries, and spins. `qbi audit` now
+      reports malformed notebooks, so clear them *before* the first build
+      rather than debugging a pegged CPU afterwards — section 4 lists two
+      known ones in the biology LA vault.
+
+### The paths under `deploy/` are placeholders
+
+`/srv/qbi` is a stand-in throughout this repo, including every file in
+`deploy/`. The real root lives only in `build_config.yml`. Substitute it in the
+copies you install, not in the repo:
+
+- [ ] `qbi-build.service`: `ExecStart=` and the `Environment=` lines for
+      `QBI_REPO`, `QBI_CONFIG` and `QBI_STAGING` all need the real paths.
+      A wrong `ExecStart` fails instantly with a terse "No such file or
+      directory" that reads like a broken script.
+- [ ] `QBI_MYST_SERVICE` is a unit name, not a path — set it to whatever the
+      MyST unit is actually called on the server.
+
 Things worth knowing before you start, all covered in `deploy/README.md`: the
 unit runs as root to control the MyST service (there is a narrower sudoers
 option), overlapping runs are prevented by `flock`, MyST restarts from an `EXIT`

@@ -50,9 +50,15 @@ venv/bin/qbi build --config build_config.yml --dry-run
 
 ## Schedule it
 
+**Edit the paths first.** `/srv/qbi` is a placeholder everywhere in this repo,
+which is public. In the copies you place under `/etc/systemd/system/`, set
+`ExecStart=` and the `QBI_REPO` / `QBI_CONFIG` / `QBI_STAGING` environment
+lines to the real paths, and `QBI_MYST_SERVICE` to the real MyST unit name.
+Edit the installed copies, not the tracked files.
+
 ```bash
 cp deploy/qbi-build.service deploy/qbi-build.timer /etc/systemd/system/
-chmod +x deploy/qbi-build.sh
+# then edit those two copies for the real paths (see above)
 systemctl daemon-reload
 systemctl enable --now qbi-build.timer
 
