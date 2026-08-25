@@ -19,7 +19,18 @@ Environment=QBI_MYST_SERVICE=myst-eln
 
 # A vault sync over thousands of files, with image re-encoding, can take a
 # while on first run. Do not let systemd kill it mid-write.
-TimeoutStartSec=3600
+#
+# Six hours, not one. The first build after image optimization is enabled has
+# to decode and re-encode every image already in the vaults -- tens of GB of
+# full-size camera photos, hours of Pillow. Once the manifest exists only
+# changed images are touched and a normal run is minutes, so this ceiling is
+# sized for the one-time pass. Lower it once you have seen a steady-state
+# build time you trust.
+#
+# Bounded rather than infinity on purpose: the site is down for the duration
+# of a build, so a genuinely hung one has to fail eventually rather than stay
+# down forever.
+TimeoutStartSec=21600
 
 # The site is down while this runs, so keep it off the CPU's critical path
 # without letting it crawl.
