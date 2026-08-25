@@ -4,6 +4,16 @@ Description=Rebuild the QBI ELN site from the research vaults
 # not be bound to it.
 After=network.target
 
+# The vaults and staging normally live on a separate array. If that array is
+# not mounted, the staging path is a bare directory on the root disk -- and an
+# empty directory needs no .qbi-staging marker, so the pipeline's own guard
+# does not fire either. A failed mount with `nofail` in fstab is silent, and
+# only surfaces on the next reboot, which may be months later.
+#
+# Substitute the real staging path. systemd then refuses to start the build at
+# all unless that filesystem is actually mounted.
+RequiresMountsFor=/srv/qbi/_build_staging
+
 [Service]
 Type=oneshot
 ExecStart=/srv/qbi/jupyter-book-pipeline/deploy/qbi-build.sh

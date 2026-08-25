@@ -55,6 +55,11 @@ which is public. In the copies you place under `/etc/systemd/system/`, set
 `ExecStart=` and the `QBI_REPO` / `QBI_CONFIG` / `QBI_STAGING` environment
 lines to the real paths. Edit the installed copies, not the tracked files.
 
+`RequiresMountsFor=` must name the real staging path too. If the array holding
+the vaults is not mounted, that path is an empty directory on the root disk,
+and an empty directory is one the pipeline will happily claim and sync into.
+systemd checking the mount first is the cheapest guard against that.
+
 `QBI_MYST_SERVICE` must name the real MyST unit; it ships defaulted to
 `myst-eln`. Get this wrong and the build aborts rather than proceeding --
 `systemctl is-active` cannot distinguish a stopped service from one that does
