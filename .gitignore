@@ -48,6 +48,13 @@ audit_reports/
 /research-*/
 /*_vault/
 
+# --- Agent/editor local settings ---
+# Claude Code writes a per-machine permission allow-list here. It holds no
+# secrets, but it is local state (interpreter paths, one-off commands) and
+# would otherwise be swept in by `git add -A`. A shared .claude/settings.json
+# stays committable if the team ever wants one.
+.claude/settings.local.json
+
 # --- Editor ---
 # Local interpreter selection is machine-specific: this checkout uses .venv on
 # Windows, the server uses venv/ on Linux. Not shared.

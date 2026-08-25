@@ -9,7 +9,11 @@
 *.service text eol=lf
 *.timer text eol=lf
 
-# Keep the shell script executable when checked out.
+# The executable bit is NOT set by .gitattributes -- it lives in the tracked
+# file mode (100755), applied once with `git update-index --chmod=+x`.
+# On a Windows checkout also set `git config core.fileMode false`, or NTFS
+# reports the bit as missing and git reverts it to 100644 -- which is how
+# systemd ends up with Permission denied on ExecStart.
 deploy/qbi-build.sh text eol=lf
 
 # Binary assets git should not touch.
