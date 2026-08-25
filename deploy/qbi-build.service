@@ -15,7 +15,7 @@ User=root
 Environment=QBI_REPO=/srv/qbi/jupyter-book-pipeline
 Environment=QBI_CONFIG=/srv/qbi/jupyter-book-pipeline/build_config.yml
 Environment=QBI_STAGING=/srv/qbi/_build_staging
-Environment=QBI_MYST_SERVICE=myst
+Environment=QBI_MYST_SERVICE=myst-eln
 
 # A vault sync over thousands of files, with image re-encoding, can take a
 # while on first run. Do not let systemd kill it mid-write.

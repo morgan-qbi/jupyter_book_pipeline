@@ -112,8 +112,10 @@ copies you install, not in the repo:
       `QBI_REPO`, `QBI_CONFIG` and `QBI_STAGING` all need the real paths.
       A wrong `ExecStart` fails instantly with a terse "No such file or
       directory" that reads like a broken script.
-- [ ] `QBI_MYST_SERVICE` is a unit name, not a path — set it to whatever the
-      MyST unit is actually called on the server.
+- [ ] `QBI_MYST_SERVICE` is a unit name, not a path. Confirmed 2026-08-25 as
+      `myst-eln`, which is now the default in `qbi-build.sh`. The script
+      verifies the unit exists and aborts if it does not, so a wrong name
+      fails loudly instead of quietly syncing under a running server.
 
 Things worth knowing before you start, all covered in `deploy/README.md`: the
 unit runs as root to control the MyST service (there is a narrower sudoers

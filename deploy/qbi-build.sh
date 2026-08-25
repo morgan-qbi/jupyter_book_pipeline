@@ -11,7 +11,7 @@ set -euo pipefail
 REPO="${QBI_REPO:-/srv/qbi/jupyter-book-pipeline}"
 CONFIG="${QBI_CONFIG:-$REPO/build_config.yml}"
 STAGING="${QBI_STAGING:-/srv/qbi/_build_staging}"
-SERVICE="${QBI_MYST_SERVICE:-myst}"
+SERVICE="${QBI_MYST_SERVICE:-myst-eln}"
 VENV="${QBI_VENV:-$REPO/venv}"
 LOCK="${QBI_LOCK:-/var/lock/qbi-build.lock}"
 
@@ -32,6 +32,20 @@ staging_dirty() {
     [ -d "$STAGING/.git" ] || return 0          # not a repo: assume changed
     [ -n "$(git -C "$STAGING" status --porcelain)" ]
 }
+
+# `systemctl is-active` answers "no" both for a stopped service and for one
+# that does not exist, and those need opposite responses. Left conflated, a
+# typo in QBI_MYST_SERVICE reads as "not running", so the build never stops
+# the server, syncs underneath it with the watcher live, and reports success.
+# Resolve the unit up front instead -- before the EXIT trap is armed, so a
+# bad name cannot leave a half-handled service behind.
+if [ "$(systemctl show -p LoadState --value "$SERVICE.service" 2>/dev/null)" != "loaded" ]; then
+    log "FATAL: no systemd unit named $SERVICE.service"
+    log "       Set QBI_MYST_SERVICE to the real MyST unit name."
+    log "       Refusing to sync: an unstopped server would be served a"
+    log "       half-written site and its watcher would thrash."
+    exit 1
+fi
 
 log "starting build"
 

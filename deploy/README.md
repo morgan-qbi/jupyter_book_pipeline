@@ -53,8 +53,13 @@ venv/bin/qbi build --config build_config.yml --dry-run
 **Edit the paths first.** `/srv/qbi` is a placeholder everywhere in this repo,
 which is public. In the copies you place under `/etc/systemd/system/`, set
 `ExecStart=` and the `QBI_REPO` / `QBI_CONFIG` / `QBI_STAGING` environment
-lines to the real paths, and `QBI_MYST_SERVICE` to the real MyST unit name.
-Edit the installed copies, not the tracked files.
+lines to the real paths. Edit the installed copies, not the tracked files.
+
+`QBI_MYST_SERVICE` must name the real MyST unit; it ships defaulted to
+`myst-eln`. Get this wrong and the build aborts rather than proceeding --
+`systemctl is-active` cannot distinguish a stopped service from one that does
+not exist, and treating the second as the first means syncing underneath a
+live server.
 
 ```bash
 cp deploy/qbi-build.service deploy/qbi-build.timer /etc/systemd/system/
