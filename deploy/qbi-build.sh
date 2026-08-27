@@ -15,6 +15,19 @@ SERVICE="${QBI_MYST_SERVICE:-myst-eln}"
 VENV="${QBI_VENV:-$REPO/venv}"
 LOCK="${QBI_LOCK:-/var/lock/qbi-build.lock}"
 
+# The build runs as root while the staging repo is owned by the service
+# account, which trips git's dubious-ownership guard and makes every git
+# command in staging fail. Declare the directory trusted for these invocations
+# only, rather than mutating root's global gitconfig -- the fix then travels
+# with the script instead of living undocumented on one machine.
+GIT_STAGING=(git -C "$STAGING" -c "safe.directory=$STAGING")
+
+# A daemon has no git identity of its own, and git refuses to commit without
+# one. The snapshot is the rollback mechanism, so it must not depend on
+# whatever `git config --global` happens to say for the user running the unit.
+COMMIT_NAME="${QBI_COMMIT_NAME:-QBI build}"
+COMMIT_EMAIL="${QBI_COMMIT_EMAIL:-qbi-build@localhost}"
+
 log() { printf '%s  %s\n' "$(date -Is)" "$*"; }
 
 # A build over a large vault takes minutes. Without a lock, a timer firing on a
@@ -30,7 +43,7 @@ staging_dirty() {
     # Staging is a git repo, so git itself is the change detector. Anything
     # MyST generates lives under _build/, which staging/.gitignore excludes.
     [ -d "$STAGING/.git" ] || return 0          # not a repo: assume changed
-    [ -n "$(git -C "$STAGING" status --porcelain)" ]
+    [ -n "$("${GIT_STAGING[@]}" status --porcelain)" ]
 }
 
 # `systemctl is-active` answers "no" both for a stopped service and for one
@@ -45,6 +58,21 @@ if [ "$(systemctl show -p LoadState --value "$SERVICE.service" 2>/dev/null)" != 
     log "       Refusing to sync: an unstopped server would be served a"
     log "       half-written site and its watcher would thrash."
     exit 1
+fi
+
+# Same absent-vs-inactive trap as the service check, one layer down: a git
+# command that fails prints nothing to stdout, so `staging_dirty` reads the
+# error as "nothing changed" and quietly skips the snapshot. The build looks
+# clean and the rollback point silently never exists. Check that git actually
+# works here while nothing has been stopped yet.
+if [ -d "$STAGING/.git" ]; then
+    if ! git_check="$("${GIT_STAGING[@]}" status --porcelain 2>&1)"; then
+        log "FATAL: git cannot operate in $STAGING"
+        while IFS= read -r line; do log "       $line"; done <<< "$git_check"
+        log "       The staging snapshot is what makes a bad build revertable."
+        log "       Refusing to build without it."
+        exit 1
+    fi
 fi
 
 log "starting build"
@@ -79,9 +107,17 @@ fi
 if staging_dirty; then
     log "changes detected"
     if [ -d "$STAGING/.git" ]; then
-        git -C "$STAGING" add -A
-        git -C "$STAGING" commit -q -m "site rebuild $(date -Is)" || true
-        log "committed staging snapshot"
+        "${GIT_STAGING[@]}" add -A
+        # `|| true` used to swallow this. A commit fails for reasons that
+        # matter -- no identity, no disk, a stale lock -- and losing the
+        # rollback point silently is the exact failure this script keeps
+        # walking into. Say so instead.
+        if "${GIT_STAGING[@]}" -c "user.name=$COMMIT_NAME" -c "user.email=$COMMIT_EMAIL" commit -q -m "site rebuild $(date -Is)"; then
+            log "committed staging snapshot"
+        else
+            log "WARNING: staging snapshot commit failed -- this build has no"
+            log "         rollback point. The published site itself is fine."
+        fi
     fi
 else
     log "no changes; site is already current"
