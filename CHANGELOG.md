@@ -32,6 +32,15 @@ build refuses to adopt the existing staging directory until it is marked with
   page and target — when a page links to a file the allow-list left out.
   Confidential and `.qbi-exclude` subtrees are reported as counts only, never
   by name.
+- **Duplicate filenames are summarized rather than listed.** The build printed
+  every filename shared by more than one file, and every path each resolved to.
+  A vault of generated analysis plots — the same six plot names written into
+  hundreds of run folders — produced tens of thousands of lines and buried the
+  extension census and the link warnings under it. It was also the wrong thing
+  to report: a shared name only matters where a page links it by filename
+  alone, and link conversion already warns there, naming the page and the copy
+  it picked. Now a count, the worst few offenders, and a pointer to those
+  warnings.
 - Text cleanup is **code-aware**: fenced blocks and inline code spans are left
   byte-for-byte intact, so `@decorator` and string literals inside code are no
   longer rewritten. Escaping `@` in prose is unchanged and intended — MyST reads

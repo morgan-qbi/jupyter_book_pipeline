@@ -213,3 +213,66 @@ def test_census_counts_tif_as_published(tmp_path, staging):
     census, _ = sync_vault(v, staging)
     assert census.published[".tif"] == 1
     assert ".tif" not in census.skipped
+
+
+# =============================================================================
+# Ambiguous filenames are summarized, not listed
+# =============================================================================
+
+def test_ambiguous_filenames_are_summarized_not_listed(tmp_path, capsys):
+    """A vault of generated analysis plots shares the same filenames across
+    hundreds of run folders. Listing every one of them ran to tens of thousands
+    of lines and buried the census and the link warnings under it."""
+    vault = tmp_path / "vault"
+    for run in range(40):
+        folder = vault / "scope" / f"run_{run:03d}"
+        folder.mkdir(parents=True)
+        (folder / "mfe_vs_field.png").write_bytes(b"x")
+        (folder / "tail_mfe_20mT.png").write_bytes(b"x")
+
+    build_file_index(vault)
+    out = capsys.readouterr().out
+
+    assert "2 names shared by 80 files" in out
+    assert "mfe_vs_field.png (40 copies)" in out
+    # The listing this replaced printed one line per copy.
+    assert out.count("run_0") == 0
+    assert len(out.splitlines()) < 10
+
+
+def test_ambiguous_summary_is_silent_when_every_name_is_unique(tmp_path, capsys):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "one.md").write_text("a", encoding="utf-8")
+    (vault / "two.md").write_text("b", encoding="utf-8")
+
+    build_file_index(vault)
+    assert capsys.readouterr().out == ""
+
+
+def test_ambiguous_summary_caps_the_names_it_shows(tmp_path, capsys):
+    vault = tmp_path / "vault"
+    for copy in range(2):
+        folder = vault / f"copy_{copy}"
+        folder.mkdir(parents=True)
+        for name in range(12):
+            (folder / f"plot_{name:02d}.png").write_bytes(b"x")
+
+    build_file_index(vault)
+    out = capsys.readouterr().out
+
+    assert "12 names shared by 24 files" in out
+    assert "... and 7 more" in out
+
+
+def test_duplicate_names_still_resolve_to_every_copy(tmp_path):
+    """The summary replaced the printing, not the index itself: a name claimed
+    by several files still maps to the list link conversion picks from."""
+    vault = tmp_path / "vault"
+    for run in ("a", "b"):
+        folder = vault / run
+        folder.mkdir(parents=True)
+        (folder / "shared.png").write_bytes(b"x")
+
+    index, _ = build_file_index(vault)
+    assert index["shared.png"] == ["a/shared.png", "b/shared.png"]

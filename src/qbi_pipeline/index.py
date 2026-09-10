@@ -38,13 +38,53 @@ def build_file_index(source_path):
 
         # Add to filename index for vault-wide lookup
         if sanitized_filename in file_index:
-            if not isinstance(file_index[sanitized_filename], list):
-                print(f"Found duplicate: {sanitized_filename}")
-                print(f"   First:  {file_index[sanitized_filename]}")
-                file_index[sanitized_filename] = [file_index[sanitized_filename]]
-            print(f"   Another: {sanitized_path_str}")
+            existing = file_index[sanitized_filename]
+            if not isinstance(existing, list):
+                file_index[sanitized_filename] = [existing]
             file_index[sanitized_filename].append(sanitized_path_str)
         else:
             file_index[sanitized_filename] = sanitized_path_str
 
+    report_ambiguous_names(file_index)
     return file_index, path_set
+
+
+# How many of the worst offenders to name. Enough to recognize the pattern --
+# usually one analysis script writing the same plot filenames into every run
+# folder -- without turning the summary back into the listing it replaces.
+AMBIGUOUS_NAMES_SHOWN = 5
+
+
+def report_ambiguous_names(file_index):
+    """
+    Summarize the filenames that more than one file claims.
+
+    This used to print every duplicate name and every path it resolved to. On a
+    vault of generated analysis plots that ran to tens of thousands of lines
+    and buried the extension census and the link warnings underneath it.
+
+    The listing was also reporting the wrong thing. A shared filename is only a
+    problem when a page refers to it by filename alone, and link conversion
+    already warns at exactly that point, naming the page, the reference and the
+    copy it picked. Nothing here can say which duplicates matter; what it can
+    say, and all it says now, is how much ambiguity the vault carries.
+    """
+    ambiguous = {
+        name: paths for name, paths in file_index.items() if isinstance(paths, list)
+    }
+    if not ambiguous:
+        return
+
+    copies = sum(len(paths) for paths in ambiguous.values())
+    print(f"  Ambiguous filenames: {len(ambiguous):,} names shared by {copies:,} files.")
+
+    worst = sorted(ambiguous.items(), key=lambda item: (-len(item[1]), item[0]))
+    for name, paths in worst[:AMBIGUOUS_NAMES_SHOWN]:
+        print(f"    {name} ({len(paths)} copies)")
+    if len(worst) > AMBIGUOUS_NAMES_SHOWN:
+        print(f"    ... and {len(worst) - AMBIGUOUS_NAMES_SHOWN:,} more")
+
+    print(
+        "    Only matters where a page links one by filename alone: that page "
+        "is warned about individually."
+    )
