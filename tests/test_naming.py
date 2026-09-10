@@ -273,3 +273,27 @@ def test_name_flag_is_refused_alongside_a_config():
     )
     with pytest.raises(ValueError, match="single-vault"):
         cli.run_build(args)
+
+
+def test_dry_run_reports_the_resolved_vault_titles(tmp_path, capsys):
+    """A dry run writes nothing and generates no myst.yml, so the build log is
+    the only place a newly added vault's title can be checked before the site
+    is actually rebuilt."""
+    vault = tmp_path / "research-biology-la"
+    (vault / "proj" / "1_eln").mkdir(parents=True)
+    (vault / "proj" / "1_eln" / "note.md").write_text("body\n", encoding="utf-8")
+
+    staging = tmp_path / "_build_staging"
+    config_file = tmp_path / "build_config.yml"
+    config_file.write_text(
+        f"output: {str(staging)!r}\n"
+        f"vaults:\n"
+        f"  - path: {str(vault)!r}\n"
+        f"    name: \"Research Biology LA\"\n",
+        encoding="utf-8",
+    )
+
+    cli.build_multi_vault(cli.load_build_config(config_file), dry_run=True)
+
+    assert "Title: Research Biology LA" in capsys.readouterr().out
+    assert not (staging / "myst.yml").exists()

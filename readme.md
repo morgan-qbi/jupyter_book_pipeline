@@ -38,7 +38,8 @@ qbi build ../path/to/vault ../_build_staging
 # Single vault, titled exactly (multi-vault titles come from the config)
 qbi build ../path/to/vault ../_build_staging --name "Research Team LA"
 
-# Preview what would change, writing nothing
+# Preview what would change, writing nothing. Prints each vault's resolved
+# title, so a new or renamed vault can be checked without rebuilding the site
 qbi build --config build_config.yml --dry-run
 
 # Vault hygiene report: broken references and page links, links to headings

@@ -40,6 +40,10 @@ Read the SKIPPED lines. Anything there that belongs on the site goes in
 `publish_extensions` in the build config. The build also warns, by page and by
 target, whenever a page links to a file the allow-list skipped.
 
+A dry run also prints each vault's resolved `Title:`, which is how you check a
+newly added or renamed vault before rebuilding the site. It generates no
+`myst.yml`, so that line is the only place the title appears.
+
 ## Install
 
 ```bash
@@ -81,6 +85,41 @@ A systemd timer is preferred over crontab here because the job needs to
 `systemctl stop/start` the MyST unit, so it has to run somewhere that can talk
 to systemd, and because `journalctl -u` gives you the build log for free.
 
+## Running a build by hand
+
+You do not need to stop MyST yourself. `qbi-build.sh` takes the lock, stops the
+service, syncs, snapshots staging and restarts the service from an `EXIT` trap.
+Run one on demand and watch it:
+
+```bash
+systemctl start qbi-build.service         # blocking; Type=oneshot
+journalctl -u qbi-build.service -f
+```
+
+To check a config change — a new vault, a renamed one — without touching the
+site at all, run the pipeline directly with `--dry-run`. It writes nothing, so
+MyST can stay up, and it prints each vault's resolved title:
+
+```bash
+venv/bin/qbi build --config build_config.yml --dry-run
+```
+
+If you want to run `qbi build` by hand for real, stop the timer first. **A
+hand-run `qbi build` does not take `qbi-build.sh`'s lock**, so a timer firing
+mid-build writes into the same staging tree:
+
+```bash
+systemctl stop qbi-build.timer
+systemctl stop myst-eln
+venv/bin/qbi build --config build_config.yml
+systemctl start myst-eln
+systemctl start qbi-build.timer
+```
+
+Prefer `systemctl start qbi-build.service` where you can: it is the same
+sequence, it cannot forget to bring MyST back, and it leaves a staging commit
+to roll back to.
+
 ## Why it stops MyST
 
 `myst start` serves and watches. Sync writes files one at a time, so a running
@@ -114,7 +153,7 @@ changed and skips the MyST restart if not — which is why the staging
 rather not, run it as the service account and grant a narrow sudoers rule:
 
 ```
-qbi ALL=(root) NOPASSWD: /bin/systemctl stop myst, /bin/systemctl start myst
+qbi ALL=(root) NOPASSWD: /bin/systemctl stop myst-eln, /bin/systemctl start myst-eln
 ```
 
 then prefix the two `systemctl` calls in `qbi-build.sh` with `sudo`.
@@ -132,5 +171,5 @@ cd /srv/qbi/_build_staging
 git log --oneline
 git diff HEAD~1                 # what the last build changed
 git reset --hard HEAD~1         # roll the site back
-systemctl restart myst
+systemctl restart myst-eln
 ```

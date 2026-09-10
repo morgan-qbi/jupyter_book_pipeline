@@ -246,6 +246,10 @@ def build_multi_vault(config, dry_run=False):
 
         print(f"\n{'─' * 50}")
         print(f"Processing vault: {vault_name}")
+        # The title, here, because config generation is skipped on a dry run --
+        # which is exactly when someone is checking whether a newly added vault
+        # is named the way they meant.
+        print(f"Title: {get_display_name(vault_name)}")
         print(f"{'─' * 50}")
 
         vault_staging = staging_path / vault_name

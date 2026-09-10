@@ -79,6 +79,9 @@ build refuses to adopt the existing staging directory until it is marked with
   folder ends in a lowercase acronym — `research-team-la`, titled "Research Team
   La" — can be spelled correctly without adding a word to `ACRONYMS` that would
   then fire on every other folder containing it.
+- Every build prints each vault's resolved **title**. A dry run generates no
+  `myst.yml`, so that line was previously the one thing a config change could
+  not be checked against without rebuilding the site — which means stopping it.
 - Single source of truth for publication policy (`policy.py`) and naming
   (`naming.py`), shared by the build, config generation and audit tooling.
 - `deploy/`: systemd timer and unit, a build wrapper that takes a lock, stops
