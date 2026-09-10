@@ -1,7 +1,11 @@
 # Next Steps
 
-Where the work stopped and what to pick up. Written 2026-08-21, at commit
-`69cb96b` on `main`.
+Where the work stopped and what to pick up. Started 2026-08-21 at commit
+`69cb96b`; last updated 2026-09-10 at `e400095`, both on `main`.
+
+Newest work is in the dated section below. The numbered sections beneath it are
+the standing plan and are older — where the two disagree, the dated section is
+what actually happened.
 
 Paths here use the `/srv/qbi` placeholder, same as the rest of the repo — this
 repository is public. Substitute the real share path as you go; the real ones
@@ -9,7 +13,11 @@ live in `build_config.yml`, which is gitignored.
 
 ---
 
-## State at handoff
+## State at handoff — 2026-08-21
+
+Kept as written. Two things here are no longer true: the work **has** been
+pushed, and the deployment **has** been run (sections 1 and 2 have unticked
+boxes that were done on the server since). The rest still holds.
 
 The refactor is finished and verified against a real vault. Nothing has been
 pushed to GitHub yet, and the deployment has never been run.
@@ -31,6 +39,92 @@ of the design decisions — particularly before changing the exclusion rules.
 
 ---
 
+## 2026-09-10 — vault naming, and quieter build output
+
+Three commits, all pushed:
+
+```
+e400095  summarize duplicate filenames instead of listing every copy
+775d8fb  how to run a build by hand, and report vault titles on a dry run
+71d09ef  name vaults where they are declared, and title single-vault builds
+```
+
+**What started it.** Vault titles came out half-capitalized: a folder ending in
+a lowercase acronym — `research-biology-la` — rendered as "Research Biology
+La". `display_names:` could already fix that, but it sits in a separate block
+further down the config, which is not where you look when you are declaring a
+vault. Adding a fourth vault at the same time made that worse, not better.
+
+**What changed:**
+
+- A `vaults:` entry takes an optional **`name:`**, used verbatim as that
+  vault's title. It feeds the same override table as `display_names:`, keyed by
+  the folder name on disk, so every layer that titles a folder — site title,
+  navigation, generated index — still reads one source of truth. `name:` wins
+  if a vault is named in both places, and the build says so rather than
+  resolving it silently.
+- **`qbi build src out --name`** does the same for single-vault mode, which
+  reads no config. `--name` alongside `--config` is refused, not ignored.
+- **Every build prints each vault's resolved `Title:`, dry runs included.**
+  This is the one that pays off daily. A dry run generates no `myst.yml`, so
+  until now a name change could not be checked without rebuilding the site —
+  and rebuilding means taking it down.
+- **Duplicate filenames are summarized, not listed.** Building the file index
+  printed every shared filename and every path it resolved to. On the biology
+  LA vault that is **2,555 names shared by 22,142 files** — tens of thousands
+  of lines, burying the extension census and the link warnings underneath it.
+  It was also the wrong thing to report: a shared name only matters where a
+  page links it by filename alone, and link conversion already warns there,
+  naming the page and the copy it picked. Now a count, the five worst
+  offenders, and a pointer to those warnings.
+- `deploy/README.md` gained a **"Running a build by hand"** section — the
+  answer was `systemctl start qbi-build.service` all along, buried as a
+  trailing comment in "Schedule it". Its recovery and sudoers examples said
+  `myst` where everything else says `myst-eln`; fixed.
+
+**Where the config stands.** `build_config.yml` now lists **four vaults**, each
+with an explicit `name:`, plus a commented-out physics-theory entry waiting on
+its vault. `publish_extensions` carries the phylogenetics and sequence formats
+(`.bionj`, `.contree`, `.faa`, `.fna`, `.iqtree`, `.mldist`, `.nex`).
+
+On the naming scheme: titles read `Discipline - Location (Qualifier)`. The
+qualifier slot matters — three vaults are places and one is a topic, and
+without it the topic one reads as a place in the sidebar.
+
+**Verified by dry run only.** The site has *not* been rebuilt with any of this.
+The dry run on the server parses the four-vault config, resolves all four
+titles and writes nothing.
+
+### Pick up here
+
+- [ ] **Run the real build**, and expect it to be slow. Follow
+      "Running a build by hand" in [deploy/README.md](./deploy/README.md):
+
+      ```bash
+      systemctl start qbi-build.service
+      journalctl -u qbi-build.service -f      # in another shell
+      ```
+
+      A newly added vault is a **first sync**, so every image in it is
+      optimized and re-encoded. The manifest is per-vault
+      (`<staging>/<vault>/.qbi-manifest.json`), so the established vaults stay
+      incremental and fast, but the new one is a full pass — that is what
+      `TimeoutStartSec=21600` in the unit is sized for. **The site is down for
+      the duration.** Start it when you can leave it alone.
+- [ ] **Check the four titles** in the generated config once it finishes:
+      `grep 'title:' <staging>/myst.yml`. The nav order is config order, not
+      alphabetical, so check the vaults group the way you want while you are
+      in there.
+- [ ] **Read the per-page ambiguous-link warnings.** With 2,555 shared names in
+      one vault, these are the ones that need looking at — each names a page
+      that links a file by bare filename and the copy the build chose. If that
+      set is also large, it is a real content problem in the vaults, not
+      output noise, and it wants its own pass.
+- [ ] **Reconcile sections 1 and 2 below with reality.** Both still have
+      unticked boxes that were done on the server weeks ago.
+
+---
+
 ## 1. Push to GitHub
 
 Unblocked. The repo is public and has been checked: no credentials, no server
@@ -43,7 +137,7 @@ layout, no vault contents.
       things stopping it — the decision rests on researchers knowing that
       nothing sensitive belongs in `1_` through `4_`. That is a briefing, not a
       control; see "naming rules fail open" in section 5.
-- [ ] `git push origin main`
+- [x] `git push origin main` — done; `main` has tracked `origin/main` since.
 
 If you ever want `.csv` off again, remove it from `PUBLISHABLE_EXTENSIONS` in
 `src/qbi_pipeline/policy.py` and let people opt in per-build via
@@ -234,7 +328,7 @@ Raised in passing and never started. Listed so they are not lost.
 
 ```bash
 pip install -e ".[dev]"
-pytest                  # 341 tests
+pytest                  # 358 tests
 ruff check src tests
 
 qbi build --config local_test_config.yml     # gitignored; real vault copy
