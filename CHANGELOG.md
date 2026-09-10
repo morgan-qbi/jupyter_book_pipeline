@@ -72,6 +72,13 @@ build refuses to adopt the existing staging directory until it is marked with
   name does not title-case well, applied at any depth. These were hardcoded in
   `naming.py`; one institute's folder names are configuration, not library code,
   and this repository is public.
+- **Vaults can be named where they are declared.** A `vaults:` entry takes an
+  optional `name:`, used verbatim as that vault's title, and `qbi build src out`
+  takes `--name` for the same purpose in single-vault mode, which reads no
+  config. Both feed the same override table as `display_names`, so a vault whose
+  folder ends in a lowercase acronym — `research-team-la`, titled "Research Team
+  La" — can be spelled correctly without adding a word to `ACRONYMS` that would
+  then fire on every other folder containing it.
 - Single source of truth for publication policy (`policy.py`) and naming
   (`naming.py`), shared by the build, config generation and audit tooling.
 - `deploy/`: systemd timer and unit, a build wrapper that takes a lock, stops

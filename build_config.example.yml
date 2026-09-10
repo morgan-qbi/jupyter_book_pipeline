@@ -16,12 +16,21 @@ output: "/srv/qbi/_build_staging"
 # Optional. Its README/index is used as the site homepage.
 root: "/srv/qbi"
 
+# `name:` is optional and sets the vault's title exactly as written. Use it
+# whenever the folder name does not title-case the way you want -- a trailing
+# lowercase acronym is the usual reason, since `research-team-la` would
+# otherwise render as "Research Team La".
 vaults:
   - path: "/srv/qbi/research-team-one"
+    name: "Research Team One"
   - path: "/srv/qbi/research-team-two"
 
 # Optional. Exact display names for folders whose real name does not
 # title-case well, at any depth: vaults, projects, or subfolders.
+#
+# Vaults can be named either way -- here, or with `name:` above. Both feed the
+# same table; `name:` wins if a vault is named in both places, and the build
+# says so.
 #
 # Most names do not need an entry. Capitals already present in a folder name
 # are preserved, so `NI_DAQ_testing` and `pRSETb` come out right on their own,

@@ -35,6 +35,9 @@ qbi build --config build_config.yml
 # Single vault
 qbi build ../path/to/vault ../_build_staging
 
+# Single vault, titled exactly (multi-vault titles come from the config)
+qbi build ../path/to/vault ../_build_staging --name "Research Team LA"
+
 # Preview what would change, writing nothing
 qbi build --config build_config.yml --dry-run
 
@@ -81,7 +84,7 @@ Source vaults are never modified.
 | TIFF | Converted to PNG, since no browser renders TIFF inline. 16-bit and float images are rescaled to 8-bit for display |
 | Video | `.mp4` renders inline as `<video>`; `.mov` and `.webm` publish as download links, because MyST renders those as a broken `<img>` |
 | Links | Resolves Obsidian `![[embeds]]`, `[[page links]]` and loose markdown paths against a vault-wide index — Obsidian resolves links by searching, not by strict relative path. Skips code, so pandas `df[['a','b']]` is left alone |
-| Titles | Derived from the filename, but capitals already in a name are preserved: `NI_DAQ_testing` and `pRSETb` mean what they say. Lowercase acronyms come from `ACRONYMS` in `naming.py`; exact names come from `display_names` in the build config |
+| Titles | Derived from the filename, but capitals already in a name are preserved: `NI_DAQ_testing` and `pRSETb` mean what they say. Lowercase acronyms come from `ACRONYMS` in `naming.py`; exact names come from a vault's `name:` or `display_names` in the build config, or `--name` in single-vault mode |
 | Text | Normalizes dashes and escapes `@` for MyST citations, **skipping code blocks and inline code** |
 | Notebooks | Malformed `.ipynb` files are skipped with a warning rather than failing the whole site build |
 

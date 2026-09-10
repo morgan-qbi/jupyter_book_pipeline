@@ -5,9 +5,10 @@ Naming now has exactly one implementation, in qbi_pipeline.naming.
 """
 
 import pytest
+import yaml
 
+from qbi_pipeline import cli, naming
 from qbi_pipeline import myst_config as config_generator
-from qbi_pipeline import naming
 
 # =============================================================================
 # sanitize_filename / sanitize_path
@@ -168,3 +169,107 @@ def test_acronym_table_is_lowercase_keyed():
     """Lookup is on an all-lowercase word, so a capitalized key would be dead
     weight that silently never matches."""
     assert all(key == key.lower() for key in naming.ACRONYMS)
+
+
+# =============================================================================
+# Display names supplied by the build config: `name:` on a vault, and --name
+# =============================================================================
+
+def test_vault_name_key_becomes_a_display_name_override():
+    """The name is asked for where the vault is declared. It is keyed by the
+    folder name on disk, so it reaches every layer that titles that folder."""
+    config = {'vaults': [
+        {'path': '/srv/qbi/research-biology-la', 'name': 'Research Biology LA'},
+    ]}
+    assert cli.resolve_display_names(config) == {
+        'research-biology-la': 'Research Biology LA',
+    }
+
+
+def test_vault_without_a_name_key_is_left_to_prettify():
+    config = {'vaults': [{'path': '/srv/qbi/research-biology-la'}]}
+    assert cli.resolve_display_names(config) == {}
+
+
+def test_vault_name_and_display_names_table_merge():
+    config = {
+        'vaults': [{'path': '/srv/qbi/research-biology-la', 'name': 'Research Biology LA'}],
+        'display_names': {'ecoli_expression': 'E. coli Expression'},
+    }
+    assert cli.resolve_display_names(config) == {
+        'research-biology-la': 'Research Biology LA',
+        'ecoli_expression': 'E. coli Expression',
+    }
+
+
+def test_vault_name_wins_over_the_display_names_table(capsys):
+    """`name:` sits on the vault itself, so it is the more specific of the two.
+    A disagreement is reported rather than resolved silently."""
+    config = {
+        'vaults': [{'path': '/srv/qbi/research-biology-la', 'name': 'Research Biology LA'}],
+        'display_names': {'research-biology-la': 'Something Else'},
+    }
+    resolved = cli.resolve_display_names(config)
+
+    assert resolved == {'research-biology-la': 'Research Biology LA'}
+    assert 'Something Else' in capsys.readouterr().out
+
+
+def test_matching_entries_in_both_places_are_not_reported(capsys):
+    config = {
+        'vaults': [{'path': '/srv/qbi/research-biology-la', 'name': 'Research Biology LA'}],
+        'display_names': {'research-biology-la': 'Research Biology LA'},
+    }
+    cli.resolve_display_names(config)
+    assert capsys.readouterr().out == ''
+
+
+@pytest.mark.parametrize("bad", [["Research Biology LA"], 42, {'a': 'A'}])
+def test_non_string_vault_name_is_rejected(bad):
+    config = {'vaults': [{'path': '/srv/qbi/research-biology-la', 'name': bad}]}
+    with pytest.raises(ValueError):
+        cli.resolve_display_names(config)
+
+
+def test_malformed_display_names_table_is_rejected_before_merging():
+    config = {'vaults': [{'path': '/srv/qbi/research-biology-la'}],
+              'display_names': ['not', 'a', 'mapping']}
+    with pytest.raises(ValueError):
+        cli.resolve_display_names(config)
+
+
+def test_single_vault_name_titles_the_generated_site(tmp_path):
+    """`qbi build src out` reads no config, so --name is its only way to spell
+    a title exactly. Previously it had none, and lowercase folder names came
+    out half-capitalized."""
+    vault = tmp_path / "research-biology-la"
+    (vault / "proj" / "1_eln").mkdir(parents=True)
+    (vault / "proj" / "1_eln" / "note.md").write_text("body\n", encoding="utf-8")
+
+    staging = tmp_path / "_build_staging"
+    cli.build_single_vault(vault, staging, display_name="Research Biology LA")
+
+    config = yaml.safe_load((staging / "myst.yml").read_text(encoding="utf-8"))
+    assert config['project']['title'] == "Research Biology LA"
+
+
+def test_single_vault_without_a_name_still_prettifies(tmp_path):
+    vault = tmp_path / "research-biology-la"
+    (vault / "proj" / "1_eln").mkdir(parents=True)
+    (vault / "proj" / "1_eln" / "note.md").write_text("body\n", encoding="utf-8")
+
+    staging = tmp_path / "_build_staging"
+    cli.build_single_vault(vault, staging)
+
+    config = yaml.safe_load((staging / "myst.yml").read_text(encoding="utf-8"))
+    assert config['project']['title'] == "Research Biology La"
+
+
+def test_name_flag_is_refused_alongside_a_config():
+    """The flag would be silently ignored otherwise: multi-vault titles come
+    from the config, and there is no one vault for it to apply to."""
+    args = cli.build_parser().parse_args(
+        ['build', '--config', 'build_config.yml', '--name', 'Research Biology LA']
+    )
+    with pytest.raises(ValueError, match="single-vault"):
+        cli.run_build(args)

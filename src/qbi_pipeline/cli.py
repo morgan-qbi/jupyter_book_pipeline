@@ -32,7 +32,7 @@ from .myst_config import (
     generate_multi_vault_config,
     generate_myst_config,
 )
-from .naming import configure_display_names
+from .naming import configure_display_names, get_display_name
 from .policy import PUBLISHABLE_EXTENSIONS
 from .staging import (
     assert_safe_staging_target,
@@ -58,6 +58,44 @@ def resolve_publishable_extensions(config):
     if normalized:
         print(f"Additional published extensions from config: {', '.join(sorted(normalized))}")
     return PUBLISHABLE_EXTENSIONS | normalized
+
+
+def resolve_display_names(config):
+    """
+    Merge the per-vault `name:` keys into the config's `display_names` table.
+
+    A vault's display name is asked for where the vault is declared, not in a
+    separate block further down the file, so a `vaults:` entry may carry a
+    `name:` of its own. Both routes feed the same table, keyed by the folder
+    name on disk, so every layer that titles that folder -- site title,
+    navigation, generated index -- still reads one source of truth.
+
+    `name:` is the more specific of the two, so it wins a disagreement, and
+    says so rather than resolving it silently.
+    """
+    configured = config.get('display_names') or {}
+    if not isinstance(configured, dict):
+        raise ValueError("`display_names` must be a mapping of folder name to display name")
+
+    display_names = dict(configured)
+
+    for vault in config['vaults']:
+        name = vault.get('name')
+        if name is None:
+            continue
+        if not isinstance(name, str):
+            raise ValueError(f"`name` for vault {vault['path']!r} must be a string")
+
+        folder = Path(vault['path']).name
+        shadowed = display_names.get(folder)
+        if shadowed is not None and shadowed != name:
+            print(
+                f"Note: vault {folder} is named {name!r} in `vaults:`, "
+                f"which overrides {shadowed!r} in `display_names:`"
+            )
+        display_names[folder] = name
+
+    return display_names
 
 
 def validate_output_path(output, vaults, root=None):
@@ -125,7 +163,7 @@ def load_build_config(config_path):
         sys.exit(1)
 
     try:
-        configure_display_names(config.get('display_names'))
+        configure_display_names(resolve_display_names(config))
     except ValueError as e:
         print(f"Error: {e}")
         sys.exit(1)
@@ -133,16 +171,27 @@ def load_build_config(config_path):
     return config
 
 
-def build_single_vault(source_path, staging_dir, dry_run=False):
-    """Sync a single vault into staging and generate its myst.yml"""
+def build_single_vault(source_path, staging_dir, dry_run=False, display_name=None):
+    """
+    Sync a single vault into staging and generate its myst.yml.
+
+    `display_name` is this mode's answer to `display_names:`, which it has no
+    config to read. It goes into the same override table, so a name given here
+    titles the site exactly as written -- `Research: Team One` rather than
+    whatever prettifying the folder name happens to produce.
+    """
     source_path = Path(source_path)
     staging_path = Path(staging_dir)
     bucket_name = source_path.name.replace('_local', '').replace('_gcs', '')
+
+    if display_name is not None:
+        configure_display_names({bucket_name: display_name})
 
     print("=" * 50)
     print("Starting single-vault build")
     print(f"Source: {source_path}")
     print(f"Output: {staging_path}")
+    print(f"Title:  {get_display_name(bucket_name)}")
     if dry_run:
         print("DRY RUN - nothing will be written")
     print("=" * 50)
@@ -241,10 +290,17 @@ def build_multi_vault(config, dry_run=False):
 def run_build(args):
     """`qbi build` — sync vaults into staging and generate myst.yml"""
     if args.config:
+        if args.name:
+            raise ValueError(
+                "--name applies to single-vault mode. With a config, name the vault "
+                "there: a `name:` on its `vaults:` entry, or a `display_names:` key"
+            )
         build_multi_vault(load_build_config(args.config), dry_run=args.dry_run)
     elif args.source and args.output:
         validate_output_path(args.output, [args.source])
-        build_single_vault(args.source, args.output, dry_run=args.dry_run)
+        build_single_vault(
+            args.source, args.output, dry_run=args.dry_run, display_name=args.name
+        )
     else:
         raise ValueError("Provide either --config, or both a source and an output path")
     return 0
@@ -270,6 +326,8 @@ def build_parser():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='Examples:\n'
                '  qbi build ../research-team-one ../_build_staging\n'
+               '  qbi build ../research-team-one ../_build_staging '
+               '--name "Research: Team One"\n'
                '  qbi build --config build_config.yml\n'
                '  qbi build --config build_config.yml --dry-run',
     )
@@ -279,6 +337,9 @@ def build_parser():
                        help='Output staging directory (single vault mode)')
     build.add_argument('--config', '-c', default=None,
                        help='Path to build config YAML (multi vault mode)')
+    build.add_argument('--name', default=None,
+                       help='Exact display title for the vault (single vault mode); '
+                            'with --config, name vaults in the config instead')
     build.add_argument('--dry-run', '-n', action='store_true',
                        help='Report what would change without writing anything')
     build.set_defaults(handler=run_build)

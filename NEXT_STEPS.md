@@ -186,8 +186,10 @@ as surprises.
 - **Logging is `print`-based.** Structured logging was deprioritized because
   journald timestamps stdout under systemd, so the practical gap is small.
   Revisit if you ever want machine-readable build logs.
-- **Single-vault mode has no display-name overrides.** `qbi build src out` takes
-  no config, and `display_names` lives in the config. Multi-vault is unaffected.
+- **Single-vault mode names only the vault itself.** `qbi build src out --name`
+  sets the site title, but that mode reads no config, so projects and subfolders
+  below it still get prettified names with no way to override them. Multi-vault
+  is unaffected — `display_names` reaches any depth.
 - **Date prefixes now stay in page titles.** `20250918_rampdown.md` titles as
   "20250918 Rampdown" rather than "Rampdown". Deliberate — the greedy strip
   collapsed a folder of date-distinguished entries into one repeated nav title —
@@ -245,4 +247,5 @@ never be committed.
 
 When adding acronyms that display wrong in titles, `ACRONYMS` in
 `src/qbi_pipeline/naming.py` is the lowercase-word table; exact folder names go
-in `display_names` in the build config.
+in `display_names` in the build config, or, for a vault, in a `name:` on its
+`vaults:` entry.
